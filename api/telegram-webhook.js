@@ -26,7 +26,7 @@ export default async function handler(req, res) {
       replyMessage =
         "👋 Xin chào! Tôi sẽ thông báo khi có game miễn phí mới.\nDùng /check để xem ngay danh sách hiện tại.";
     } else if (text === "/check") {
-      const checkUrl = `${BASE_URL}/api/check-free-games`;
+      const checkUrl = `${process.env.BASE_URL}/api/check-free-games?silent=true`;
       console.log("🔍 Gọi API kiểm tra:", checkUrl);
 
       try {

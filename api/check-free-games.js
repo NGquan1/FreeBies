@@ -28,7 +28,6 @@ async function sendTelegramMessage(message) {
 async function getEpicFreeGames() {
   const url =
     "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
-
   try {
     const { data } = await axios.get(url);
     const games = data.data.Catalog.searchStore.elements || [];
@@ -49,6 +48,7 @@ async function getEpicFreeGames() {
         g.catalogNs.mappings?.[0]?.pageSlug ||
         g.urlSlug ||
         g.id;
+
       const link = `https://store.epicgames.com/en-US/p/${slug}`;
 
       if (offer?.discountSetting?.discountPercentage === 0) {
@@ -110,6 +110,8 @@ async function getGOGFreeGames() {
 export default async function handler(req, res) {
   console.log("🔍 Đang kiểm tra game miễn phí...");
 
+  const silent = req.query.silent === "true";
+
   const [{ freeNow, comingSoon, discounted }, gogGames] = await Promise.all([
     getEpicFreeGames(),
     getGOGFreeGames(),
@@ -153,7 +155,9 @@ export default async function handler(req, res) {
       "\n🆓 <b>GOG Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
   }
 
-  await sendTelegramMessage(message);
+  if (!silent) {
+    await sendTelegramMessage(message);
+  }
 
   res.status(200).json({ success: true, message });
 }
