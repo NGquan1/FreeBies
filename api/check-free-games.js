@@ -1,63 +1,68 @@
+import fs from "fs";
+import path from "path";
 import axios from "axios";
 import * as cheerio from "cheerio";
+import dotenv from "dotenv";
+dotenv.config();
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHAT_ID = process.env.CHAT_ID;
+const dataFile = path.join(process.cwd(), "api", "notified.json");
 
-async function sendTelegramMessage(message) {
-  if (!BOT_TOKEN || !CHAT_ID) {
-    console.error("❌ Thiếu BOT_TOKEN hoặc CHAT_ID trong biến môi trường");
-    return;
-  }
-
+function loadNotified() {
   try {
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: "HTML",
-      disable_web_page_preview: false,
-    });
-    console.log("✅ Đã gửi thông báo Telegram!");
-  } catch (err) {
-    console.error("❌ Lỗi gửi Telegram:", err.response?.data || err.message);
+    const json = fs.readFileSync(dataFile, "utf-8");
+    return JSON.parse(json);
+  } catch {
+    return { epic: [], gog: [] };
   }
 }
 
+function saveNotified(data) {
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), "utf-8");
+}
+
+async function sendTelegramMessage(message) {
+  const botToken = process.env.BOT_TOKEN;
+  const chatId = process.env.CHAT_ID;
+
+  if (!botToken || !chatId) {
+    console.error("❌ BOT_TOKEN hoặc CHAT_ID chưa được cấu hình");
+    return;
+  }
+
+  await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    chat_id: chatId,
+    text: message,
+    parse_mode: "HTML",
+    disable_web_page_preview: false,
+  });
+}
+
 async function getEpicFreeGames() {
+  const url =
+    "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
   try {
-    const url =
-      "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
     const { data } = await axios.get(url);
-
-    const games = data?.data?.Catalog?.searchStore?.elements
-      ?.map((g) => {
-        const slug =
-          g.catalogNs?.mappings?.[0]?.pageSlug ||
-          g.productSlug ||
-          g.urlSlug ||
-          "";
-        const url = `https://store.epicgames.com/en-US/p/${slug}`;
-        const offer =
-          g.promotions?.promotionalOffers?.[0]?.promotionalOffers?.[0];
-        const upcoming =
-          g.promotions?.upcomingPromotionalOffers?.[0]?.promotionalOffers?.[0];
-
-        return {
+    return (
+      data?.data?.Catalog?.searchStore?.elements
+        ?.filter(
+          (g) =>
+            g.promotions &&
+            g.promotions.promotionalOffers?.length > 0 &&
+            g.promotions.promotionalOffers[0].promotionalOffers[0]
+              .discountSetting.discountPercentage === 0
+        )
+        ?.map((g) => ({
           title: g.title,
-          url,
-          freeNow: offer?.discountSetting?.discountPercentage === 0,
-          upcoming: upcoming ? true : false,
-        };
-      })
-      .filter(Boolean);
-
-    const freeNow = games.filter((g) => g.freeNow);
-    const upcoming = games.filter((g) => g.upcoming);
-
-    return { freeNow, upcoming };
+          id: g.id,
+          slug: g.productSlug,
+          url: `https://store.epicgames.com/en-US/p/${
+            g.productSlug || g.urlSlug
+          }`,
+        })) || []
+    );
   } catch (err) {
     console.error("❌ Lỗi Epic Games:", err.message);
-    return { freeNow: [], upcoming: [] };
+    return [];
   }
 }
 
@@ -77,11 +82,8 @@ async function getGOGFreeGames() {
       let href = $(el).attr("href");
       const title = $(el).text().trim();
       if (!href || !title) return;
-
       if (!href.startsWith("http")) href = `https://www.gog.com${href}`;
-      if (!games.some((g) => g.url === href)) {
-        games.push({ title, url: href });
-      }
+      if (!games.some((g) => g.url === href)) games.push({ title, url: href });
     });
 
     return games.slice(0, 10);
@@ -92,39 +94,53 @@ async function getGOGFreeGames() {
 }
 
 export default async function handler(req, res) {
-  console.log("🔍 Đang quét game miễn phí...");
+  console.log("🔍 Kiểm tra game miễn phí...");
+  const [epicGames, gogGames] = await Promise.all([
+    getEpicFreeGames(),
+    getGOGFreeGames(),
+  ]);
 
-  const { freeNow, upcoming } = await getEpicFreeGames();
-  const gog = await getGOGFreeGames();
+  const notified = loadNotified();
+  const newEpic = epicGames.filter((g) => !notified.epic.includes(g.title));
+  const newGOG = gogGames.filter((g) => !notified.gog.includes(g.title));
 
   let message = "🎮 <b>Game miễn phí hôm nay:</b>\n";
 
-  if (freeNow.length > 0) {
+  if (epicGames.length > 0) {
     message += "\n🆓 <b>Epic Games Free Now:</b>\n";
-    freeNow.forEach((g, i) => {
-      message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
-    });
-  } else {
-    message += "\n🆓 <b>Epic Games Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
-
-  if (upcoming.length > 0) {
-    message += "\n⏳ <b>Sắp miễn phí (Epic Games):</b>\n";
-    upcoming.forEach((g, i) => {
+    epicGames.forEach((g, i) => {
       message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
     });
   }
 
-  if (gog.length > 0) {
-    message += "\n🆓 <b>GOG Free Games:</b>\n";
-    gog.forEach((g, i) => {
+  if (gogGames.length > 0) {
+    message += "\n🆓 <b>GOG Free Now:</b>\n";
+    gogGames.forEach((g, i) => {
       message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
     });
-  } else {
-    message += "\n🆓 <b>GOG Free Games:</b>\n🚫 Không có game miễn phí hiện tại.\n";
   }
 
-  await sendTelegramMessage(message);
+  if (newEpic.length > 0 || newGOG.length > 0) {
+    let newMessage = "🆕 <b>Có game miễn phí mới!</b>\n\n";
+    if (newEpic.length > 0) {
+      newMessage += "🎯 Epic Games:\n";
+      newEpic.forEach(
+        (g) => (newMessage += `- <a href="${g.url}">${g.title}</a>\n`)
+      );
+    }
+    if (newGOG.length > 0) {
+      newMessage += "\n🎯 GOG:\n";
+      newGOG.forEach(
+        (g) => (newMessage += `- <a href="${g.url}">${g.title}</a>\n`)
+      );
+    }
 
-  return res.status(200).json({ success: true, message: "Đã gửi thông báo!" });
+    await sendTelegramMessage(newMessage);
+
+    notified.epic.push(...newEpic.map((g) => g.title));
+    notified.gog.push(...newGOG.map((g) => g.title));
+    saveNotified(notified);
+  }
+
+  res.status(200).json({ success: true, epicGames, gogGames });
 }
