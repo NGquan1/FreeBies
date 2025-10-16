@@ -20,7 +20,10 @@ export default async function handler(req, res) {
     }
 
     if (text === "/check") {
+      console.log("✅ BASE_URL:", process.env.BASE_URL);
       const checkUrl = `${process.env.BASE_URL}/api/check-free-games`;
+      console.log("✅ checkUrl:", checkUrl);
+
       const response = await axios.get(checkUrl);
 
       const gamesMessage =
