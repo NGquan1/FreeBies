@@ -1,3 +1,9 @@
 {
-  "version": 2
+  "version": 2,
+  "functions": {
+    "api/check-free-games.js": {
+      "runtime": "nodejs20.x",
+      "schedule": "0 2 * * *"
+    }
+  }
 }
