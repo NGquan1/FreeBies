@@ -5,19 +5,26 @@ import * as cheerio from "cheerio";
 import dotenv from "dotenv";
 dotenv.config();
 
-const dataFile = path.join(process.cwd(), "api", "notified.json");
+const dataFile = path.join("/tmp", "notified.json");
 
 function loadNotified() {
   try {
-    const json = fs.readFileSync(dataFile, "utf-8");
-    return JSON.parse(json);
+    if (fs.existsSync(dataFile)) {
+      const json = fs.readFileSync(dataFile, "utf-8");
+      return JSON.parse(json);
+    }
+    return { epic: [], gog: [] };
   } catch {
     return { epic: [], gog: [] };
   }
 }
 
 function saveNotified(data) {
-  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), "utf-8");
+  try {
+    fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error("❌ Không thể ghi file notified:", err.message);
+  }
 }
 
 async function sendTelegramMessage(message) {
