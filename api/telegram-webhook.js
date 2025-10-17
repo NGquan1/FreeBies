@@ -1,4 +1,29 @@
 import axios from "axios";
+import fs from "fs";
+import path from "path";
+
+const notifiedFilePath = path.join(process.cwd(), "api", "notified.json");
+
+function getNotifiedUsers() {
+  try {
+    if (fs.existsSync(notifiedFilePath)) {
+      const fileContent = fs.readFileSync(notifiedFilePath, "utf-8");
+      return fileContent ? JSON.parse(fileContent) : [];
+    }
+    return [];
+  } catch (error) {
+    console.error("Lỗi khi đọc tệp notified.json:", error);
+    return [];
+  }
+}
+
+function saveNotifiedUsers(users) {
+  try {
+    fs.writeFileSync(notifiedFilePath, JSON.stringify(users, null, 2));
+  } catch (error) {
+    console.error("Lỗi khi ghi tệp notified.json:", error);
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
@@ -21,10 +46,26 @@ export default async function handler(req, res) {
     console.log(`📩 Nhận tin nhắn từ ${chatId}: ${text}`);
 
     let replyMessage = "";
+    let users = getNotifiedUsers();
 
     if (text === "/start") {
-      replyMessage =
-        "👋 Xin chào! Tôi sẽ thông báo khi có game miễn phí mới.\nDùng /check để xem ngay danh sách hiện tại.";
+      if (!users.includes(chatId)) {
+        users.push(chatId);
+        saveNotifiedUsers(users);
+        replyMessage =
+          "👋 Cảm ơn bạn đã đăng ký! Tôi sẽ thông báo khi có game miễn phí mới.\nDùng /check để xem ngay danh sách hiện tại hoặc /stop để hủy đăng ký.";
+      } else {
+        replyMessage =
+          "✅ Bạn đã đăng ký rồi! Dùng /check để xem game hoặc /stop để hủy đăng ký.";
+      }
+    } else if (text === "/stop") {
+      if (users.includes(chatId)) {
+        users = users.filter((id) => id !== chatId);
+        saveNotifiedUsers(users);
+        replyMessage = "👋 Bạn đã hủy đăng ký nhận tin. Tạm biệt!";
+      } else {
+        replyMessage = "Bạn chưa đăng ký. Dùng /start để bắt đầu.";
+      }
     } else if (text === "/check") {
       const checkUrl = `${process.env.BASE_URL}/api/check-free-games?silent=true`;
       console.log("🔍 Gọi API kiểm tra:", checkUrl);
@@ -39,7 +80,7 @@ export default async function handler(req, res) {
       }
     } else {
       replyMessage =
-        "⚙️ Lệnh không hợp lệ. Hãy dùng /check để xem game miễn phí hoặc /start để bắt đầu.";
+        "⚙️ Lệnh không hợp lệ. Hãy dùng /check để xem game, /start để đăng ký hoặc /stop để hủy.";
     }
 
     await axios.post(`${TELEGRAM_API}/sendMessage`, {

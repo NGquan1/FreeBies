@@ -1,28 +1,55 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
 dotenv.config();
 
-async function sendTelegramMessage(message) {
-  const botToken = process.env.BOT_TOKEN;
-  const chatId = process.env.CHAT_ID;
+const notifiedFilePath = path.join(process.cwd(), "api", "notified.json");
 
-  if (!botToken || !chatId) {
-    console.error("❌ BOT_TOKEN hoặc CHAT_ID chưa được cấu hình trong .env");
+async function sendToAll(message) {
+  const botToken = process.env.BOT_TOKEN;
+  if (!botToken) {
+    console.error("❌ BOT_TOKEN chưa được cấu hình trong .env");
     return;
   }
 
+  let users = [];
   try {
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      chat_id: chatId,
-      text: message,
-      parse_mode: "HTML",
-      disable_web_page_preview: false,
-    });
-    console.log("✅ Đã gửi thông báo Telegram!");
-  } catch (err) {
-    console.error("❌ Lỗi gửi Telegram:", err.response?.data || err.message);
+    if (fs.existsSync(notifiedFilePath)) {
+      const fileContent = fs.readFileSync(notifiedFilePath, "utf-8");
+      users = fileContent ? JSON.parse(fileContent) : [];
+    }
+  } catch (error) {
+    console.error("Lỗi khi đọc tệp notified.json:", error);
+    return;
   }
+
+  if (users.length === 0) {
+    console.log("👥 Không có người dùng nào để gửi thông báo.");
+    return;
+  }
+
+  console.log(`📢 Gửi thông báo đến ${users.length} người dùng...`);
+
+  const promises = users.map((chatId) => {
+    return axios
+      .post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
+      })
+      .catch((err) => {
+        console.error(
+          `❌ Lỗi gửi đến ${chatId}:`,
+          err.response?.data || err.message
+        );
+      });
+  });
+
+  await Promise.all(promises);
+  console.log("✅ Đã gửi xong thông báo!");
 }
 
 async function getEpicFreeGames() {
@@ -156,7 +183,7 @@ export default async function handler(req, res) {
   }
 
   if (!silent) {
-    await sendTelegramMessage(message);
+    await sendToAll(message);
   }
 
   res.status(200).json({ success: true, message });
