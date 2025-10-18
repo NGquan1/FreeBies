@@ -1,28 +1,40 @@
 import axios from "axios";
-import fs from "fs";
-import path from "path";
+import { MongoClient } from "mongodb";
 
-const notifiedFilePath = path.join(process.cwd(), "api", "notified.json");
+const MONGODB_URI = process.env.MONGODB_URI;
+const DB_NAME = process.env.DB_NAME || "freebies";
+const COLLECTION = "notified_users";
 
-function getNotifiedUsers() {
-  try {
-    if (fs.existsSync(notifiedFilePath)) {
-      const fileContent = fs.readFileSync(notifiedFilePath, "utf-8");
-      return fileContent ? JSON.parse(fileContent) : [];
-    }
-    return [];
-  } catch (error) {
-    console.error("Lỗi khi đọc tệp notified.json:", error);
-    return [];
+// 🧠 Giữ 1 kết nối Mongo duy nhất (Vercel function reuse)
+let cachedClient = null;
+async function getCollection() {
+  if (!MONGODB_URI) throw new Error("Thiếu biến môi trường MONGODB_URI");
+  if (!cachedClient) {
+    cachedClient = new MongoClient(MONGODB_URI);
+    await cachedClient.connect();
   }
+  const db = cachedClient.db(DB_NAME);
+  return db.collection(COLLECTION);
 }
 
-function saveNotifiedUsers(users) {
-  try {
-    fs.writeFileSync(notifiedFilePath, JSON.stringify(users, null, 2));
-  } catch (error) {
-    console.error("Lỗi khi ghi tệp notified.json:", error);
-  }
+async function addUser(chatId) {
+  const collection = await getCollection();
+  await collection.updateOne(
+    { chatId },
+    { $set: { chatId } },
+    { upsert: true }
+  );
+}
+
+async function removeUser(chatId) {
+  const collection = await getCollection();
+  await collection.deleteOne({ chatId });
+}
+
+async function isUserExists(chatId) {
+  const collection = await getCollection();
+  const user = await collection.findOne({ chatId });
+  return !!user;
 }
 
 export default async function handler(req, res) {
@@ -30,11 +42,8 @@ export default async function handler(req, res) {
 
   const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
   const BASE_URL = process.env.BASE_URL;
-
-  if (!TELEGRAM_TOKEN || !BASE_URL) {
-    console.error("❌ Thiếu biến môi trường BOT_TOKEN hoặc BASE_URL");
-    return res.status(500).send("Missing environment variables");
-  }
+  if (!TELEGRAM_TOKEN || !BASE_URL)
+    return res.status(500).send("❌ Missing BOT_TOKEN or BASE_URL");
 
   const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
   const chatId = req.body?.message?.chat?.id;
@@ -43,44 +52,52 @@ export default async function handler(req, res) {
   if (!chatId || !text) return res.status(200).send("No message content");
 
   try {
-    console.log(`📩 Nhận tin nhắn từ ${chatId}: ${text}`);
-
+    console.log(`📩 Message from ${chatId}: ${text}`);
     let replyMessage = "";
-    let users = getNotifiedUsers();
 
-    if (text === "/start") {
-      if (!users.includes(chatId)) {
-        users.push(chatId);
-        saveNotifiedUsers(users);
-        replyMessage =
-          "👋 Cảm ơn bạn đã đăng ký! Tôi sẽ thông báo khi có game miễn phí mới.\nDùng /check để xem ngay danh sách hiện tại hoặc /stop để hủy đăng ký.";
-      } else {
-        replyMessage =
-          "✅ Bạn đã đăng ký rồi! Dùng /check để xem game hoặc /stop để hủy đăng ký.";
+    switch (text) {
+      case "/start": {
+        const exists = await isUserExists(chatId);
+        if (!exists) {
+          await addUser(chatId);
+          replyMessage =
+            "👋 Cảm ơn bạn đã đăng ký! Tôi sẽ thông báo khi có game miễn phí mới.\nDùng /check để xem ngay danh sách hiện tại hoặc /stop để hủy đăng ký.";
+        } else {
+          replyMessage =
+            "✅ Bạn đã đăng ký rồi! Dùng /check để xem game hoặc /stop để hủy đăng ký.";
+        }
+        break;
       }
-    } else if (text === "/stop") {
-      if (users.includes(chatId)) {
-        users = users.filter((id) => id !== chatId);
-        saveNotifiedUsers(users);
-        replyMessage = "👋 Bạn đã hủy đăng ký nhận tin. Tạm biệt!";
-      } else {
-        replyMessage = "Bạn chưa đăng ký. Dùng /start để bắt đầu.";
-      }
-    } else if (text === "/check") {
-      const checkUrl = `${process.env.BASE_URL}/api/check-free-games?silent=true`;
-      console.log("🔍 Gọi API kiểm tra:", checkUrl);
 
-      try {
-        const response = await axios.get(checkUrl);
-        replyMessage =
-          response.data?.message || "❌ Không thể lấy danh sách game miễn phí.";
-      } catch (err) {
-        console.error("Lỗi khi gọi API check-free-games:", err.message);
-        replyMessage = "❌ Lỗi khi lấy danh sách game miễn phí.";
+      case "/stop": {
+        const exists = await isUserExists(chatId);
+        if (exists) {
+          await removeUser(chatId);
+          replyMessage = "👋 Bạn đã hủy đăng ký nhận tin. Tạm biệt!";
+        } else {
+          replyMessage = "❗Bạn chưa đăng ký. Dùng /start để bắt đầu.";
+        }
+        break;
       }
-    } else {
-      replyMessage =
-        "⚙️ Lệnh không hợp lệ. Hãy dùng /check để xem game, /start để đăng ký hoặc /stop để hủy.";
+
+      case "/check": {
+        const checkUrl = `${BASE_URL}/api/check-free-games?silent=true`;
+        console.log("🔍 Gọi API kiểm tra:", checkUrl);
+        try {
+          const response = await axios.get(checkUrl);
+          replyMessage =
+            response.data?.message ||
+            "❌ Không thể lấy danh sách game miễn phí.";
+        } catch (err) {
+          console.error("Lỗi khi gọi /check-free-games:", err.message);
+          replyMessage = "❌ Lỗi khi lấy danh sách game miễn phí.";
+        }
+        break;
+      }
+
+      default:
+        replyMessage =
+          "⚙️ Lệnh không hợp lệ.\nHãy dùng /check để xem game miễn phí, /start để đăng ký, hoặc /stop để hủy.";
     }
 
     await axios.post(`${TELEGRAM_API}/sendMessage`, {
@@ -90,9 +107,9 @@ export default async function handler(req, res) {
       disable_web_page_preview: false,
     });
 
-    return res.status(200).send("OK");
+    res.status(200).send("OK");
   } catch (error) {
     console.error("❌ Telegram Webhook Error:", error.message);
-    return res.status(200).send("Error handled gracefully");
+    res.status(200).send("Error handled gracefully");
   }
 }
