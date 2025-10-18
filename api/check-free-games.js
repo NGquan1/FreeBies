@@ -152,43 +152,59 @@ export default async function handler(req, res) {
     getGOGFreeGames(),
   ]);
 
-  let message = "🎮 <b>Game miễn phí hôm nay:</b>\n";
+  let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
+  // 🎁 EPIC GAMES FREE NOW
   if (freeNow.length > 0) {
-    message += "\n🆓 <b>Epic Games Free Now:</b>\n";
-    freeNow.forEach((g, i) => {
-      message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
+    message += "🆓 <b>Epic Games — Free Now</b>\n";
+    freeNow.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
     });
   } else {
-    message +=
-      "\n🆓 <b>Epic Games Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    message += "🆓 <b>Epic Games — Free Now</b>\n🚫 Không có game miễn phí.\n";
   }
 
+  // ⏳ COMING SOON
   if (comingSoon.length > 0) {
-    message += "\n⏳ <b>Sắp miễn phí:</b>\n";
-    comingSoon.forEach((g, i) => {
-      message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
+    message += "\n⏳ <b>Sắp miễn phí</b>\n";
+    comingSoon.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
     });
   }
 
+  // 💸 DISCOUNTED GAMES
   if (discounted.length > 0) {
-    message += "\n💸 <b>Đang giảm giá:</b>\n";
-    discounted.forEach((g, i) => {
-      message += `${i + 1}. <a href="${g.url}">${g.title}</a> - ${
-        g.discount
-      }%\n`;
+    message += "\n💸 <b>Đang giảm giá</b>\n";
+    discounted.forEach((g) => {
+      // Nếu có giá gốc và giá sale, thêm định dạng
+      const original = g.originalPrice ? `~$${g.originalPrice}~` : "";
+      const sale = g.discountPrice ? `<b>$${g.discountPrice}</b>` : "";
+      message += `• <a href="${g.url}">${g.title}</a> — ${original} ${sale} (-${g.discount}%)\n`;
     });
   }
 
+  // 🧩 GOG GAMES
   if (gogGames.length > 0) {
-    message += "\n🆓 <b>GOG Free Now:</b>\n";
-    gogGames.forEach((g, i) => {
-      message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
+    message += "\n🧩 <b>GOG — Free & Deals</b>\n";
+    gogGames.forEach((g) => {
+      // Tìm xem trong tiêu đề có giảm giá không
+      const match = g.title.match(/(.+?)-(\d+)%\$(\d+\.\d+)\$(\d+\.\d+)/);
+      if (match) {
+        const [_, title, discount, oldPrice, newPrice] = match;
+        message += `• <a href="${
+          g.url
+        }">${title.trim()}</a> — ~$${oldPrice}~ <b>$${newPrice}</b> (-${discount}%)\n`;
+      } else {
+        message += `• <a href="${g.url}">${g.title}</a>\n`;
+      }
     });
   } else {
-    message +=
-      "\n🆓 <b>GOG Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    message += "\n🧩 <b>GOG</b>\n🚫 Không có game miễn phí hiện tại.\n";
   }
+
+  // 🕹️ FOOTER
+  message +=
+    "\n\n✨ <i>Nhấn vào link để nhận game miễn phí ngay!</i>\n#FreeGames #Epic #GOG";
 
   if (!silent) {
     await sendToAll(message);

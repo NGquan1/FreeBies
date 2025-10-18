@@ -5,7 +5,6 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
 const COLLECTION = "notified_users";
 
-// 🧠 Giữ 1 kết nối Mongo duy nhất (Vercel function reuse)
 let cachedClient = null;
 async function getCollection() {
   if (!MONGODB_URI) throw new Error("Thiếu biến môi trường MONGODB_URI");
