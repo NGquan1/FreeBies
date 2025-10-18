@@ -1,48 +1,58 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import dotenv from "dotenv";
 import { MongoClient } from "mongodb";
+
+dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
 const COLLECTION = "notified_users";
 
-let cachedClient = null;
-async function getUsers() {
-  if (!MONGODB_URI) throw new Error("Thiếu MONGODB_URI");
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI);
-    await cachedClient.connect();
+async function getMongoCollection() {
+  if (!MONGODB_URI) throw new Error("Thiếu biến môi trường MONGODB_URI");
+  const client = new MongoClient(MONGODB_URI);
+  await client.connect();
+  const db = client.db(DB_NAME);
+  return { collection: db.collection(COLLECTION), client };
+}
+
+async function getAllUsers() {
+  const { collection, client } = await getMongoCollection();
+  try {
+    const users = await collection.find({}).toArray();
+    return users.map((u) => u.chatId);
+  } finally {
+    await client.close();
   }
-  const db = cachedClient.db(DB_NAME);
-  return db.collection(COLLECTION).find({}).toArray();
 }
 
 async function sendToAll(message) {
   const botToken = process.env.BOT_TOKEN;
   if (!botToken) {
-    console.error("❌ BOT_TOKEN chưa được cấu hình");
+    console.error("❌ BOT_TOKEN chưa được cấu hình trong .env");
     return;
   }
 
-  const users = await getUsers();
-  if (users.length === 0) {
+  const users = await getAllUsers();
+  if (!users.length) {
     console.log("👥 Không có người dùng nào để gửi thông báo.");
     return;
   }
 
   console.log(`📢 Gửi thông báo đến ${users.length} người dùng...`);
 
-  const promises = users.map((u) =>
+  const promises = users.map((chatId) =>
     axios
       .post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        chat_id: u.chatId,
+        chat_id: chatId,
         text: message,
         parse_mode: "HTML",
         disable_web_page_preview: false,
       })
       .catch((err) =>
         console.error(
-          `❌ Lỗi gửi đến ${u.chatId}:`,
+          `❌ Lỗi gửi đến ${chatId}:`,
           err.response?.data || err.message
         )
       )
@@ -65,10 +75,10 @@ async function getEpicFreeGames() {
 
     for (const g of games) {
       if (!g.promotions) continue;
+
       const offer = g.promotions.promotionalOffers?.[0]?.promotionalOffers?.[0];
       const upcoming =
         g.promotions.upcomingPromotionalOffers?.[0]?.promotionalOffers?.[0];
-
       const slug =
         g.productSlug ||
         g.catalogNs.mappings?.[0]?.pageSlug ||
@@ -150,7 +160,8 @@ export default async function handler(req, res) {
       message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
     });
   } else {
-    message += "\n🚫 Không có game miễn phí hiện tại.\n";
+    message +=
+      "\n🆓 <b>Epic Games Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
   }
 
   if (comingSoon.length > 0) {
@@ -174,6 +185,9 @@ export default async function handler(req, res) {
     gogGames.forEach((g, i) => {
       message += `${i + 1}. <a href="${g.url}">${g.title}</a>\n`;
     });
+  } else {
+    message +=
+      "\n🆓 <b>GOG Free Now:</b>\n🚫 Không có game miễn phí hiện tại.\n";
   }
 
   if (!silent) {
