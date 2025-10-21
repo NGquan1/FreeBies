@@ -62,6 +62,7 @@ async function sendToAll(message) {
   console.log("✅ Đã gửi xong thông báo!");
 }
 
+/* ========================= EPIC GAMES ========================= */
 async function getEpicFreeGames() {
   const url =
     "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
@@ -113,6 +114,7 @@ async function getEpicFreeGames() {
   }
 }
 
+/* ========================= GOG ========================= */
 async function getGOGFreeGames() {
   const url = "https://www.gog.com/en/games?price=free&page=1";
   try {
@@ -130,7 +132,6 @@ async function getGOGFreeGames() {
       let href = $(el).attr("href");
       const title = $(el).text().trim();
       if (!href || !title) return;
-
       if (!href.startsWith("http")) href = `https://www.gog.com${href}`;
       if (!games.some((g) => g.url === href)) games.push({ title, url: href });
     });
@@ -142,62 +143,132 @@ async function getGOGFreeGames() {
   }
 }
 
+/* ========================= STEAM ========================= */
+async function getSteamFreeGames() {
+  try {
+    const { data } = await axios.get(
+      "https://store.steampowered.com/api/featuredcategories/?cc=us"
+    );
+
+    const freeGames = [];
+    if (data["specials"]?.items) {
+      const trulyFree = data["specials"].items.filter(
+        (g) => g.final_price === 0
+      );
+      for (const g of trulyFree) {
+        freeGames.push({
+          title: g.name,
+          url: `https://store.steampowered.com/app/${g.id}`,
+        });
+      }
+    }
+
+    if (data["freeweekend"]?.items) {
+      for (const item of data["freeweekend"].items) {
+        freeGames.push({
+          title: item.name,
+          url: `https://store.steampowered.com/app/${item.id}`,
+        });
+      }
+    }
+
+    return freeGames;
+  } catch (err) {
+    console.error("❌ Lỗi Steam:", err.message);
+    return [];
+  }
+}
+
+/* ========================= UBISOFT ========================= */
+async function getUbisoftFreeGames() {
+  try {
+    const { data } = await axios.get(
+      "https://store.ubisoft.com/api/free-games?locale=en-US"
+    );
+    if (!data?.data?.length) return [];
+    return data.data.map((g) => ({
+      title: g.attributes.name,
+      url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
+    }));
+  } catch (err) {
+    console.error("❌ Lỗi Ubisoft:", err.message);
+    return [];
+  }
+}
+
+/* ========================= XBOX (placeholder) ========================= */
+async function getXboxFreeGames() {
+  // Xbox chưa có API public => có thể bổ sung sau
+  return [];
+}
+
+/* ========================= MAIN HANDLER ========================= */
 export default async function handler(req, res) {
   console.log("🔍 Đang kiểm tra game miễn phí...");
 
   const silent = req.query.silent === "true";
 
-  const [{ freeNow, comingSoon, discounted }, gogGames] = await Promise.all([
+  const [
+    { freeNow, comingSoon, discounted },
+    gogGames,
+    steamGames,
+    ubisoftGames,
+    xboxGames,
+  ] = await Promise.all([
     getEpicFreeGames(),
     getGOGFreeGames(),
+    getSteamFreeGames(),
+    getUbisoftFreeGames(),
+    getXboxFreeGames(),
   ]);
 
   let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
-  if (freeNow.length > 0) {
-    message += "🆓 <b>Epic Games — Free Now</b>\n";
-    freeNow.forEach((g) => {
-      message += `• <a href="${g.url}">${g.title}</a>\n`;
-    });
-  } else {
-    message += "🆓 <b>Epic Games — Free Now</b>\n🚫 Không có game miễn phí.\n";
-  }
+  // Epic
+  message += "🆓 <b>Epic Games</b>\n";
+  if (freeNow.length)
+    freeNow.forEach(
+      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
+    );
+  else message += "🚫 Không có game miễn phí.\n";
+  message += "───────────────\n";
 
-  if (comingSoon.length > 0) {
-    message += "\n⏳ <b>Sắp miễn phí</b>\n";
-    comingSoon.forEach((g) => {
-      message += `• <a href="${g.url}">${g.title}</a>\n`;
-    });
-  }
+  // GOG
+  message += "🧩 <b>GOG</b>\n";
+  if (gogGames.length)
+    gogGames.forEach(
+      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
+    );
+  else message += "🚫 Không có game miễn phí.\n";
+  message += "───────────────\n";
 
-  if (discounted.length > 0) {
-    message += "\n💸 <b>Đang giảm giá</b>\n";
-    discounted.forEach((g) => {
-      const original = g.originalPrice ? `~$${g.originalPrice}~` : "";
-      const sale = g.discountPrice ? `<b>$${g.discountPrice}</b>` : "";
-      message += `• <a href="${g.url}">${g.title}</a> — ${original} ${sale} (-${g.discount}%)\n`;
-    });
-  }
+  // Steam
+  message += "🔥 <b>Steam</b>\n";
+  if (steamGames.length)
+    steamGames.forEach(
+      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
+    );
+  else message += "🚫 Không có game miễn phí.\n";
+  message += "───────────────\n";
 
-  if (gogGames.length > 0) {
-    message += "\n🧩 <b>GOG — Free & Deals</b>\n";
-    gogGames.forEach((g) => {
-      const match = g.title.match(/(.+?)-(\d+)%\$(\d+\.\d+)\$(\d+\.\d+)/);
-      if (match) {
-        const [_, title, discount, oldPrice, newPrice] = match;
-        message += `• <a href="${
-          g.url
-        }">${title.trim()}</a> — ~$${oldPrice}~ <b>$${newPrice}</b> (-${discount}%)\n`;
-      } else {
-        message += `• <a href="${g.url}">${g.title}</a>\n`;
-      }
-    });
-  } else {
-    message += "\n🧩 <b>GOG</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
+  // Ubisoft
+  message += "🎯 <b>Ubisoft</b>\n";
+  if (ubisoftGames.length)
+    ubisoftGames.forEach(
+      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
+    );
+  else message += "🚫 Không có game miễn phí.\n";
+  message += "───────────────\n";
 
-  message +=
-    "\n\n✨ <i>Nhấn vào link để nhận game miễn phí ngay!</i>\n#FreeGames #Epic #GOG";
+  // Xbox
+  message += "🎮 <b>Xbox</b>\n";
+  if (xboxGames.length)
+    xboxGames.forEach(
+      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
+    );
+  else message += "🚫 Không có game miễn phí.\n";
+
+  message += "\n✨ <i>Nhấn vào link để nhận ngay!</i>\n#FreeGames";
 
   if (!silent) {
     await sendToAll(message);
