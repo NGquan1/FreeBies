@@ -159,13 +159,12 @@ async function getSteamGames() {
 }
 
 /* ========================= UBISOFT ========================= */
-/* ========================= UBISOFT ========================= */
 export async function getUbisoftGames() {
   try {
     const freeNow = [];
     const discounts = [];
 
-    // 🟢 1️⃣ Game miễn phí / Free-to-play
+    /* 🟢 1️⃣ Game miễn phí / Free-to-play */
     const freeApi = "https://store.ubisoft.com/api/free-games?locale=en_SG";
     try {
       const { data } = await axios.get(freeApi, { timeout: 10000 });
@@ -173,10 +172,11 @@ export async function getUbisoftGames() {
         for (const g of data.data) {
           const name = g.attributes?.name;
           const slug = g.attributes?.slug;
-          if (name && slug) {
+          const id = g.id; // dùng cả ID để build URL chính xác
+          if (name && slug && id) {
             freeNow.push({
-              title: name,
-              url: `https://store.ubisoft.com/sea/${slug}.html?lang=en_SG`,
+              title: name.trim(),
+              url: `https://store.ubisoft.com/sea/${slug}/${id}.html?lang=en_SG`,
             });
           }
         }
@@ -185,32 +185,38 @@ export async function getUbisoftGames() {
       console.warn("⚠️ Ubisoft free API error:", err.message);
     }
 
-    // 🟣 2️⃣ Game đang giảm giá
-    const dealsApi =
-      "https://store.ubisoft.com/api/products?locale=en_SG&categories=discounts&page=1&pageSize=20&sort=discountPercentage:desc";
+    /* 🟣 2️⃣ Game đang giảm giá (crawl từ trang SEA) */
     try {
-      const { data } = await axios.get(dealsApi, { timeout: 10000 });
-      if (data?.data?.length) {
-        for (const g of data.data) {
-          const name = g.attributes?.name;
-          const slug = g.attributes?.slug;
-          const price = g.attributes?.price?.totalPrice;
-          const oldPrice = price?.originalPrice;
-          const newPrice = price?.discountPrice;
-          const discount = price?.discountPercentage;
-          if (name && slug && discount > 0) {
-            discounts.push({
-              title: name,
-              url: `https://store.ubisoft.com/sea/${slug}.html?lang=en_SG`,
-              oldPrice: `$${(oldPrice / 100).toFixed(2)}`,
-              newPrice: `$${(newPrice / 100).toFixed(2)}`,
-              discount: `${discount}%`,
-            });
-          }
+      const dealsUrl = "https://store.ubisoft.com/sea/home?lang=en_SG";
+      const { data } = await axios.get(dealsUrl, {
+        timeout: 12000,
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+
+      const $ = cheerio.load(data);
+
+      $(".product-card").each((_, el) => {
+        const title = $(el).find(".product-card__title").text().trim();
+        const href = $(el).find("a.product-card__link").attr("href");
+        const oldPrice = $(el).find(".price-item--regular").text().trim();
+        const newPrice = $(el).find(".price-item--sale").text().trim();
+        const discount = $(el).find(".product-card__discount").text().trim();
+
+        if (title && href && oldPrice && newPrice && discount) {
+          const url = href.startsWith("http")
+            ? href
+            : `https://store.ubisoft.com${href}`;
+          discounts.push({
+            title,
+            url,
+            oldPrice,
+            newPrice,
+            discount,
+          });
         }
-      }
+      });
     } catch (err) {
-      console.warn("⚠️ Ubisoft deals API error:", err.message);
+      console.warn("⚠️ Ubisoft discount crawl error:", err.message);
     }
 
     return { freeNow, discounts };
