@@ -163,41 +163,51 @@ export async function getUbisoftGames() {
   try {
     const freeNow = [];
 
-    // 1️⃣ Gọi API chính thức của Ubisoft (Free Events)
+    // ✅ 1️⃣ Lấy từ API (thường là free event / trial)
     const apiUrl = "https://store.ubisoft.com/api/free-games?locale=en-US";
-    const apiRes = await axios.get(apiUrl, { timeout: 10000 });
-
-    if (apiRes.data?.data?.length) {
-      freeNow.push(
-        ...apiRes.data.data.map((g) => ({
-          title: g.attributes.name || "Unknown Game",
-          url: `https://store.ubisoft.com/en-us/${
-            g.attributes.slug || ""
-          }.html`,
-        }))
-      );
+    const { data } = await axios.get(apiUrl, { timeout: 10000 });
+    if (data?.data?.length) {
+      for (const g of data.data) {
+        const title = g.attributes?.name?.trim();
+        const slug = g.attributes?.slug;
+        if (title && slug) {
+          freeNow.push({
+            title,
+            url: `https://store.ubisoft.com/en-us/${slug}.html`,
+          });
+        }
+      }
     }
 
-    // 2️⃣ Crawl danh mục Free-to-Play (Free Forever)
+    // ✅ 2️⃣ Lấy từ trang Free Games chính thức (Free Forever)
     const freeListUrl = "https://store.ubisoft.com/sea/games/free?lang=en_SG";
-    const page = await axios.get(freeListUrl, { timeout: 10000 });
-    const $ = cheerio.load(page.data);
+    const html = await axios.get(freeListUrl, { timeout: 15000 });
+    const $ = cheerio.load(html.data);
 
     $(".product-card").each((_, el) => {
       const title = $(el).find(".product-card__title").text().trim();
       const href = $(el).find("a.product-card__link").attr("href");
-      const price = $(el).find(".price-item").text().trim();
+      const price = $(el).find(".price-item").text().trim().toLowerCase();
 
-      if (title && href && /free/i.test(price)) {
-        const fullUrl = href.startsWith("http")
+      if (title && href && price.includes("free")) {
+        const url = href.startsWith("http")
           ? href
           : "https://store.ubisoft.com" + href;
-        freeNow.push({ title, url: fullUrl });
+        freeNow.push({ title, url });
       }
     });
 
-    // 3️⃣ Trả về kết quả hợp lệ
-    return { freeNow };
+    // ✅ 3️⃣ Lọc trùng theo title
+    const unique = [];
+    const seen = new Set();
+    for (const g of freeNow) {
+      if (!seen.has(g.title)) {
+        seen.add(g.title);
+        unique.push(g);
+      }
+    }
+
+    return { freeNow: unique };
   } catch (error) {
     console.error("⚠️ Ubisoft fetch error:", error.message);
     return { freeNow: [] };
