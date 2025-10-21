@@ -162,55 +162,66 @@ async function getSteamGames() {
 export async function getUbisoftGames() {
   try {
     const freeNow = [];
+    const discounts = [];
 
-    // ✅ 1️⃣ Lấy từ API (thường là free event / trial)
-    const apiUrl = "https://store.ubisoft.com/api/free-games?locale=en-US";
-    const { data } = await axios.get(apiUrl, { timeout: 10000 });
-    if (data?.data?.length) {
-      for (const g of data.data) {
-        const title = g.attributes?.name?.trim();
-        const slug = g.attributes?.slug;
-        if (title && slug) {
-          freeNow.push({
-            title,
-            url: `https://store.ubisoft.com/en-us/${slug}.html`,
-          });
+    // 🟢 Lấy game miễn phí (Free Games, Free to Play)
+    const freeListUrl = "https://store.ubisoft.com/sea/free-games?lang=en_SG";
+    try {
+      const freePage = await axios.get(freeListUrl, { timeout: 12000 });
+      const $free = cheerio.load(freePage.data);
+
+      $free(".product-card").each((_, el) => {
+        const title = $free(el).find(".product-card__title").text().trim();
+        const href = $free(el).find("a.product-card__link").attr("href");
+        const priceText = $free(el)
+          .find(".price-item")
+          .text()
+          .trim()
+          .toLowerCase();
+        if (title && href && /free/i.test(priceText)) {
+          const url = href.startsWith("http")
+            ? href
+            : `https://store.ubisoft.com${href}`;
+          freeNow.push({ title, url });
         }
-      }
+      });
+    } catch {
+      // Nếu không có trang free-games thì bỏ qua
     }
 
-    // ✅ 2️⃣ Lấy từ trang Free Games chính thức (Free Forever)
-    const freeListUrl = "https://store.ubisoft.com/sea/games/free?lang=en_SG";
-    const html = await axios.get(freeListUrl, { timeout: 15000 });
-    const $ = cheerio.load(html.data);
+    // 🟣 Lấy game giảm giá (Deals)
+    const dealsUrl = "https://store.ubisoft.com/sea/home?lang=en_SG";
+    const dealsPage = await axios.get(dealsUrl, { timeout: 12000 });
+    const $deals = cheerio.load(dealsPage.data);
 
-    $(".product-card").each((_, el) => {
-      const title = $(el).find(".product-card__title").text().trim();
-      const href = $(el).find("a.product-card__link").attr("href");
-      const price = $(el).find(".price-item").text().trim().toLowerCase();
+    $deals(".product-card").each((_, el) => {
+      const title = $deals(el).find(".product-card__title").text().trim();
+      const href = $deals(el).find("a.product-card__link").attr("href");
+      const oldText = $deals(el).find(".price-item--regular").text().trim();
+      const newText = $deals(el).find(".price-item--sale").text().trim();
+      const discountPercent = $deals(el)
+        .find(".product-card__discount")
+        .text()
+        .trim();
 
-      if (title && href && price.includes("free")) {
+      if (title && href && oldText && newText && discountPercent) {
         const url = href.startsWith("http")
           ? href
-          : "https://store.ubisoft.com" + href;
-        freeNow.push({ title, url });
+          : `https://store.ubisoft.com${href}`;
+        discounts.push({
+          title,
+          url,
+          oldPrice: oldText,
+          newPrice: newText,
+          discount: discountPercent,
+        });
       }
     });
 
-    // ✅ 3️⃣ Lọc trùng theo title
-    const unique = [];
-    const seen = new Set();
-    for (const g of freeNow) {
-      if (!seen.has(g.title)) {
-        seen.add(g.title);
-        unique.push(g);
-      }
-    }
-
-    return { freeNow: unique };
-  } catch (error) {
-    console.error("⚠️ Ubisoft fetch error:", error.message);
-    return { freeNow: [] };
+    return { freeNow, discounts };
+  } catch (err) {
+    console.error("⚠️ Ubisoft fetch error:", err.message);
+    return { freeNow: [], discounts: [] };
   }
 }
 
@@ -291,12 +302,24 @@ export default async function handler(req, res) {
   msg += "\n\n────────────────────\n";
 
   // ===== Ubisoft =====
-  msg += "🎯 <b>Ubisoft — Free Now</b>\n";
-  msg += ubisoft.freeNow.length
-    ? ubisoft.freeNow
+  msg += "🎯 <b>Ubisoft — Free & Deals</b>\n";
+  if (ubisoft.freeNow.length)
+    msg +=
+      "🆓 <b>Miễn phí</b>\n" +
+      ubisoft.freeNow
         .map((g) => `• <a href="${g.url}">${g.title}</a>`)
-        .join("\n")
-    : "🚫 Không có game miễn phí hiện tại.";
+        .join("\n");
+  else msg += "🚫 Không có game miễn phí hiện tại.\n";
+  if (ubisoft.discounts.length)
+    msg +=
+      "\n\n💸 <b>Đang giảm giá</b>\n" +
+      ubisoft.discounts
+        .slice(0, 10)
+        .map(
+          (g) =>
+            `• <a href="${g.url}">${g.title}</a> — ~${g.oldPrice}~ <b>${g.newPrice}</b> (${g.discount})`
+        )
+        .join("\n");
   msg += "\n\n────────────────────\n";
 
   // ===== Xbox =====
