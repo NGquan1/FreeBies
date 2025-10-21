@@ -9,7 +9,6 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
 const COLLECTION = "notified_users";
 
-/* ========================= MONGO ========================= */
 async function getMongoCollection() {
   if (!MONGODB_URI) throw new Error("Thiếu biến môi trường MONGODB_URI");
   const client = new MongoClient(MONGODB_URI);
@@ -28,8 +27,7 @@ async function getAllUsers() {
   }
 }
 
-/* ========================= SENDER ========================= */
-async function sendToAll(gamesByPlatform, summaryMessage) {
+async function sendToAll(message) {
   const botToken = process.env.BOT_TOKEN;
   if (!botToken) {
     console.error("❌ BOT_TOKEN chưa được cấu hình trong .env");
@@ -44,37 +42,23 @@ async function sendToAll(gamesByPlatform, summaryMessage) {
 
   console.log(`📢 Gửi thông báo đến ${users.length} người dùng...`);
 
-  for (const chatId of users) {
-    // Gửi tin tóm tắt
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      chat_id: chatId,
-      text: summaryMessage,
-      parse_mode: "HTML",
-      disable_web_page_preview: false,
-    });
+  const promises = users.map((chatId) =>
+    axios
+      .post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        chat_id: chatId,
+        text: message,
+        parse_mode: "HTML",
+        disable_web_page_preview: false,
+      })
+      .catch((err) =>
+        console.error(
+          `❌ Lỗi gửi đến ${chatId}:`,
+          err.response?.data || err.message
+        )
+      )
+  );
 
-    // Gửi ảnh từng game
-    for (const [platform, games] of Object.entries(gamesByPlatform)) {
-      for (const g of games) {
-        if (!g.image) continue;
-        const caption = `<b>${platform}</b>\n<a href="${g.url}">${g.title}</a>`;
-        await axios
-          .post(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-            chat_id: chatId,
-            photo: g.image,
-            caption,
-            parse_mode: "HTML",
-          })
-          .catch((err) =>
-            console.error(
-              `❌ Lỗi gửi ảnh ${g.title} đến ${chatId}:`,
-              err.response?.data || err.message
-            )
-          );
-      }
-    }
-  }
-
+  await Promise.all(promises);
   console.log("✅ Đã gửi xong thông báo!");
 }
 
@@ -102,19 +86,17 @@ async function getEpicFreeGames() {
         g.urlSlug ||
         g.id;
       const link = `https://store.epicgames.com/en-US/p/${slug}`;
-      const image = g.keyImages?.[0]?.url || null;
 
       if (offer?.discountSetting?.discountPercentage === 0) {
-        freeNow.push({ title: g.title, url: link, image });
+        freeNow.push({ title: g.title, url: link });
       } else if (upcoming?.discountSetting?.discountPercentage === 0) {
-        comingSoon.push({ title: g.title, url: link, image });
+        comingSoon.push({ title: g.title, url: link });
       } else if (
         g.price?.totalPrice?.discountPrice < g.price?.totalPrice?.originalPrice
       ) {
         discounted.push({
           title: g.title,
           url: link,
-          image,
           discount: (
             (1 -
               g.price.totalPrice.discountPrice /
@@ -151,9 +133,7 @@ async function getGOGFreeGames() {
       const title = $(el).text().trim();
       if (!href || !title) return;
       if (!href.startsWith("http")) href = `https://www.gog.com${href}`;
-      const image = $(el).find("img").attr("src") || null;
-      if (!games.some((g) => g.url === href))
-        games.push({ title, url: href, image });
+      if (!games.some((g) => g.url === href)) games.push({ title, url: href });
     });
 
     return games.slice(0, 10);
@@ -179,7 +159,6 @@ async function getSteamFreeGames() {
         freeGames.push({
           title: g.name,
           url: `https://store.steampowered.com/app/${g.id}`,
-          image: g.large_capsule_image || g.header_image || null,
         });
       }
     }
@@ -189,7 +168,6 @@ async function getSteamFreeGames() {
         freeGames.push({
           title: item.name,
           url: `https://store.steampowered.com/app/${item.id}`,
-          image: item.large_capsule_image || item.header_image || null,
         });
       }
     }
@@ -211,7 +189,6 @@ async function getUbisoftFreeGames() {
     return data.data.map((g) => ({
       title: g.attributes.name,
       url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
-      image: g.attributes.productImage || null,
     }));
   } catch (err) {
     console.error("❌ Lỗi Ubisoft:", err.message);
@@ -221,6 +198,7 @@ async function getUbisoftFreeGames() {
 
 /* ========================= XBOX (placeholder) ========================= */
 async function getXboxFreeGames() {
+  // Xbox chưa có API public => có thể bổ sung sau
   return [];
 }
 
@@ -246,82 +224,90 @@ export default async function handler(req, res) {
 
   let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
-  // EPIC
+  // ===== EPIC GAMES =====
   if (freeNow.length > 0) {
     message += "🆓 <b>Epic Games — Free Now</b>\n";
-    freeNow.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else
+    freeNow.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
+  } else {
     message += "🆓 <b>Epic Games — Free Now</b>\n🚫 Không có game miễn phí.\n";
+  }
 
   if (comingSoon.length > 0) {
     message += "\n⏳ <b>Sắp miễn phí</b>\n";
-    comingSoon.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
+    comingSoon.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
   }
 
   if (discounted.length > 0) {
     message += "\n💸 <b>Đang giảm giá</b>\n";
     discounted.forEach((g) => {
-      message += `• <a href="${g.url}">${g.title}</a> (-${g.discount}%)\n`;
+      const original = g.originalPrice ? `~$${g.originalPrice}~` : "";
+      const sale = g.discountPrice ? `<b>$${g.discountPrice}</b>` : "";
+      message += `• <a href="${g.url}">${g.title}</a> — ${original} ${sale} (-${g.discount}%)\n`;
     });
   }
 
+  // Gạch ngăn cách
   message += "\n────────────────────\n";
 
-  // GOG
+  // ===== GOG =====
   if (gogGames.length > 0) {
     message += "🧩 <b>GOG — Free & Deals</b>\n";
-    gogGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else message += "🧩 <b>GOG</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    gogGames.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
+  } else {
+    message += "🧩 <b>GOG</b>\n🚫 Không có game miễn phí hiện tại.\n";
+  }
 
+  // Gạch ngăn cách
   message += "\n────────────────────\n";
 
-  // STEAM
+  // ===== STEAM =====
   if (steamGames.length > 0) {
     message += "🔥 <b>Steam — Free Games</b>\n";
-    steamGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else message += "🔥 <b>Steam</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    steamGames.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
+  } else {
+    message += "🔥 <b>Steam</b>\n🚫 Không có game miễn phí hiện tại.\n";
+  }
 
+  // Gạch ngăn cách
   message += "\n────────────────────\n";
 
-  // UBISOFT
+  // ===== UBISOFT =====
   if (ubisoftGames.length > 0) {
     message += "🎯 <b>Ubisoft — Free & Deals</b>\n";
-    ubisoftGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else message += "🎯 <b>Ubisoft</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    ubisoftGames.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
+  } else {
+    message += "🎯 <b>Ubisoft</b>\n🚫 Không có game miễn phí hiện tại.\n";
+  }
 
+  // Gạch ngăn cách
   message += "\n────────────────────\n";
 
-  // XBOX
+  // ===== XBOX =====
   if (xboxGames.length > 0) {
     message += "🎮 <b>Xbox — Free & Deals</b>\n";
-    xboxGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else message += "🎮 <b>Xbox</b>\n🚫 Không có game miễn phí hiện tại.\n";
+    xboxGames.forEach((g) => {
+      message += `• <a href="${g.url}">${g.title}</a>\n`;
+    });
+  } else {
+    message += "🎮 <b>Xbox</b>\n🚫 Không có game miễn phí hiện tại.\n";
+  }
 
+  // ===== FOOTER =====
   message +=
     "\n\n✨ <i>Nhấn vào link để nhận game miễn phí ngay!</i>\n#FreeGames #Epic #GOG #Steam #Ubisoft #Xbox";
 
-  const gamesByPlatform = {
-    Epic: [...freeNow, ...comingSoon, ...discounted],
-    GOG: gogGames,
-    Steam: steamGames,
-    Ubisoft: ubisoftGames,
-    Xbox: xboxGames,
-  };
-
   if (!silent) {
-    await sendToAll(gamesByPlatform, message);
+    await sendToAll(message);
   }
 
   res.status(200).json({ success: true, message });
