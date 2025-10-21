@@ -224,46 +224,27 @@ export default async function handler(req, res) {
 
   let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
-  message += "🆓 <b>Epic Games</b>\n";
-  if (freeNow.length)
-    freeNow.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  else message += "🚫 Không có game miễn phí.\n";
-  message += "───────────────\n";
+  function formatSection(title, games) {
+    let section = `✨ <b>${title}</b>\n`;
+    if (games.length) {
+      section += games
+        .map((g, i) => `${i + 1}. <a href="${g.url}">${g.title}</a>`)
+        .join("\n");
+    } else {
+      section += "🚫 Không có game miễn phí.";
+    }
+    section += "\n━━━━━━━━━━━━━━━━━━━━━━\n\n";
+    return section;
+  }
 
-  message += "🧩 <b>GOG</b>\n";
-  if (gogGames.length)
-    gogGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  else message += "🚫 Không có game miễn phí.\n";
-  message += "───────────────\n";
+  message += formatSection("🆓 Epic Games", freeNow);
+  message += formatSection("🧩 GOG", gogGames);
+  message += formatSection("🔥 Steam", steamGames);
+  message += formatSection("🎯 Ubisoft", ubisoftGames);
+  message += formatSection("🎮 Xbox", xboxGames);
 
-  message += "🔥 <b>Steam</b>\n";
-  if (steamGames.length)
-    steamGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  else message += "🚫 Không có game miễn phí.\n";
-  message += "───────────────\n";
-
-  message += "🎯 <b>Ubisoft</b>\n";
-  if (ubisoftGames.length)
-    ubisoftGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  else message += "🚫 Không có game miễn phí.\n";
-  message += "───────────────\n";
-
-  message += "🎮 <b>Xbox</b>\n";
-  if (xboxGames.length)
-    xboxGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  else message += "🚫 Không có game miễn phí.\n";
-
-  message += "\n✨ <i>Nhấn vào link để nhận ngay!</i>\n#FreeGames";
+  message += "💡 <i>Nhấn vào link để nhận game miễn phí ngay!</i>\n";
+  message += "#FreeGames";
 
   if (!silent) {
     await sendToAll(message);
