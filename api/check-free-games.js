@@ -159,68 +159,63 @@ async function getSteamGames() {
 }
 
 /* ========================= UBISOFT ========================= */
+/* ========================= UBISOFT ========================= */
 export async function getUbisoftGames() {
   try {
     const freeNow = [];
     const discounts = [];
 
-    // 🟢 Lấy game miễn phí (Free Games, Free to Play)
-    const freeListUrl = "https://store.ubisoft.com/sea/free-games?lang=en_SG";
+    // 🟢 1️⃣ Game miễn phí / Free-to-play
+    const freeApi = "https://store.ubisoft.com/api/free-games?locale=en_SG";
     try {
-      const freePage = await axios.get(freeListUrl, { timeout: 12000 });
-      const $free = cheerio.load(freePage.data);
-
-      $free(".product-card").each((_, el) => {
-        const title = $free(el).find(".product-card__title").text().trim();
-        const href = $free(el).find("a.product-card__link").attr("href");
-        const priceText = $free(el)
-          .find(".price-item")
-          .text()
-          .trim()
-          .toLowerCase();
-        if (title && href && /free/i.test(priceText)) {
-          const url = href.startsWith("http")
-            ? href
-            : `https://store.ubisoft.com${href}`;
-          freeNow.push({ title, url });
+      const { data } = await axios.get(freeApi, { timeout: 10000 });
+      if (data?.data?.length) {
+        for (const g of data.data) {
+          const name = g.attributes?.name;
+          const slug = g.attributes?.slug;
+          if (name && slug) {
+            freeNow.push({
+              title: name,
+              url: `https://store.ubisoft.com/sea/${slug}.html?lang=en_SG`,
+            });
+          }
         }
-      });
-    } catch {
-      // Nếu không có trang free-games thì bỏ qua
+      }
+    } catch (err) {
+      console.warn("⚠️ Ubisoft free API error:", err.message);
     }
 
-    // 🟣 Lấy game giảm giá (Deals)
-    const dealsUrl = "https://store.ubisoft.com/sea/home?lang=en_SG";
-    const dealsPage = await axios.get(dealsUrl, { timeout: 12000 });
-    const $deals = cheerio.load(dealsPage.data);
-
-    $deals(".product-card").each((_, el) => {
-      const title = $deals(el).find(".product-card__title").text().trim();
-      const href = $deals(el).find("a.product-card__link").attr("href");
-      const oldText = $deals(el).find(".price-item--regular").text().trim();
-      const newText = $deals(el).find(".price-item--sale").text().trim();
-      const discountPercent = $deals(el)
-        .find(".product-card__discount")
-        .text()
-        .trim();
-
-      if (title && href && oldText && newText && discountPercent) {
-        const url = href.startsWith("http")
-          ? href
-          : `https://store.ubisoft.com${href}`;
-        discounts.push({
-          title,
-          url,
-          oldPrice: oldText,
-          newPrice: newText,
-          discount: discountPercent,
-        });
+    // 🟣 2️⃣ Game đang giảm giá
+    const dealsApi =
+      "https://store.ubisoft.com/api/products?locale=en_SG&categories=discounts&page=1&pageSize=20&sort=discountPercentage:desc";
+    try {
+      const { data } = await axios.get(dealsApi, { timeout: 10000 });
+      if (data?.data?.length) {
+        for (const g of data.data) {
+          const name = g.attributes?.name;
+          const slug = g.attributes?.slug;
+          const price = g.attributes?.price?.totalPrice;
+          const oldPrice = price?.originalPrice;
+          const newPrice = price?.discountPrice;
+          const discount = price?.discountPercentage;
+          if (name && slug && discount > 0) {
+            discounts.push({
+              title: name,
+              url: `https://store.ubisoft.com/sea/${slug}.html?lang=en_SG`,
+              oldPrice: `$${(oldPrice / 100).toFixed(2)}`,
+              newPrice: `$${(newPrice / 100).toFixed(2)}`,
+              discount: `${discount}%`,
+            });
+          }
+        }
       }
-    });
+    } catch (err) {
+      console.warn("⚠️ Ubisoft deals API error:", err.message);
+    }
 
     return { freeNow, discounts };
   } catch (err) {
-    console.error("⚠️ Ubisoft fetch error:", err.message);
+    console.error("❌ Ubisoft fetch error:", err.message);
     return { freeNow: [], discounts: [] };
   }
 }
