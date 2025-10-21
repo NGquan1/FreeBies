@@ -9,12 +9,11 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
 const COLLECTION = "notified_users";
 
+/* ========================= MONGO HELPERS ========================= */
 async function getMongoCollection() {
-  if (!MONGODB_URI) throw new Error("Thiếu biến môi trường MONGODB_URI");
   const client = new MongoClient(MONGODB_URI);
   await client.connect();
-  const db = client.db(DB_NAME);
-  return { collection: db.collection(COLLECTION), client };
+  return { collection: client.db(DB_NAME).collection(COLLECTION), client };
 }
 
 async function getAllUsers() {
@@ -27,281 +26,250 @@ async function getAllUsers() {
   }
 }
 
+/* ========================= TELEGRAM SEND ========================= */
 async function sendToAll(message) {
   const botToken = process.env.BOT_TOKEN;
-  if (!botToken) {
-    console.error("❌ BOT_TOKEN chưa được cấu hình trong .env");
-    return;
-  }
-
   const users = await getAllUsers();
-  if (!users.length) {
-    console.log("👥 Không có người dùng nào để gửi thông báo.");
-    return;
-  }
-
-  console.log(`📢 Gửi thông báo đến ${users.length} người dùng...`);
 
   const promises = users.map((chatId) =>
-    axios
-      .post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        chat_id: chatId,
-        text: message,
-        parse_mode: "HTML",
-        disable_web_page_preview: false,
-      })
-      .catch((err) =>
-        console.error(
-          `❌ Lỗi gửi đến ${chatId}:`,
-          err.response?.data || err.message
-        )
-      )
+    axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      chat_id: chatId,
+      text: message,
+      parse_mode: "HTML",
+      disable_web_page_preview: false,
+    })
   );
 
   await Promise.all(promises);
-  console.log("✅ Đã gửi xong thông báo!");
 }
 
 /* ========================= EPIC GAMES ========================= */
-async function getEpicFreeGames() {
+async function getEpicGames() {
   const url =
     "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
-  try {
-    const { data } = await axios.get(url);
-    const games = data.data.Catalog.searchStore.elements || [];
+  const { data } = await axios.get(url);
+  const games = data.data.Catalog.searchStore.elements || [];
 
-    const freeNow = [];
-    const comingSoon = [];
-    const discounted = [];
+  const result = { freeNow: [], comingSoon: [], discounted: [] };
 
-    for (const g of games) {
-      if (!g.promotions) continue;
+  for (const g of games) {
+    if (!g.promotions) continue;
 
-      const offer = g.promotions.promotionalOffers?.[0]?.promotionalOffers?.[0];
-      const upcoming =
-        g.promotions.upcomingPromotionalOffers?.[0]?.promotionalOffers?.[0];
-      const slug =
-        g.productSlug ||
-        g.catalogNs.mappings?.[0]?.pageSlug ||
-        g.urlSlug ||
-        g.id;
-      const link = `https://store.epicgames.com/en-US/p/${slug}`;
+    const offer = g.promotions.promotionalOffers?.[0]?.promotionalOffers?.[0];
+    const upcoming =
+      g.promotions.upcomingPromotionalOffers?.[0]?.promotionalOffers?.[0];
+    const slug =
+      g.productSlug || g.catalogNs.mappings?.[0]?.pageSlug || g.urlSlug || g.id;
+    const link = `https://store.epicgames.com/en-US/p/${slug}`;
 
-      if (offer?.discountSetting?.discountPercentage === 0) {
-        freeNow.push({ title: g.title, url: link });
-      } else if (upcoming?.discountSetting?.discountPercentage === 0) {
-        comingSoon.push({ title: g.title, url: link });
-      } else if (
-        g.price?.totalPrice?.discountPrice < g.price?.totalPrice?.originalPrice
-      ) {
-        discounted.push({
-          title: g.title,
-          url: link,
-          originalPrice: (g.price.totalPrice.originalPrice / 100).toFixed(2),
-          discountPrice: (g.price.totalPrice.discountPrice / 100).toFixed(2),
-          discount: (
-            (1 -
-              g.price.totalPrice.discountPrice /
-                g.price.totalPrice.originalPrice) *
-            100
-          ).toFixed(0),
-        });
-      }
+    if (offer?.discountSetting?.discountPercentage === 0) {
+      result.freeNow.push({ title: g.title, url: link });
+    } else if (upcoming?.discountSetting?.discountPercentage === 0) {
+      result.comingSoon.push({ title: g.title, url: link });
+    } else if (
+      g.price?.totalPrice?.discountPrice < g.price?.totalPrice?.originalPrice
+    ) {
+      const o = g.price.totalPrice.originalPrice / 100;
+      const d = g.price.totalPrice.discountPrice / 100;
+      const percent = ((1 - d / o) * 100).toFixed(0);
+      result.discounted.push({
+        title: g.title,
+        url: link,
+        oldPrice: o.toFixed(2),
+        newPrice: d.toFixed(2),
+        discount: percent,
+      });
     }
-
-    return { freeNow, comingSoon, discounted };
-  } catch (err) {
-    console.error("❌ Lỗi Epic Games:", err.message);
-    return { freeNow: [], comingSoon: [], discounted: [] };
   }
+
+  return result;
 }
 
 /* ========================= GOG ========================= */
-async function getGOGFreeGames() {
-  const url = "https://www.gog.com/en/games?price=free&page=1";
-  try {
-    const { data } = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-    });
+async function getGOGGames() {
+  const url = "https://www.gog.com/en/games?price=free%2Cdiscounted&page=1";
+  const { data } = await axios.get(url, {
+    headers: { "User-Agent": "Mozilla/5.0" },
+  });
+  const $ = cheerio.load(data);
+  const games = [];
 
-    const $ = cheerio.load(data);
-    const games = [];
+  $("a[href*='/game/']").each((_, el) => {
+    const href = $(el).attr("href");
+    const text = $(el).text().trim().replace(/\s+/g, " ");
+    if (!href || !text) return;
 
-    $("a[href*='/game/']").each((i, el) => {
-      let href = $(el).attr("href");
-      const title = $(el).text().trim();
-      if (!href || !title) return;
-      if (!href.startsWith("http")) href = `https://www.gog.com${href}`;
-      if (!games.some((g) => g.url === href)) games.push({ title, url: href });
-    });
+    const match = text.match(/(.+?)-(\d+)%\$(\d+(?:\.\d+)?)\$(\d+(?:\.\d+)?)/);
+    if (match) {
+      const [, title, discount, oldPrice, newPrice] = match;
+      games.push({
+        title: title.trim(),
+        url: href.startsWith("http") ? href : `https://www.gog.com${href}`,
+        oldPrice,
+        newPrice,
+        discount,
+      });
+    } else {
+      games.push({
+        title: text.trim(),
+        url: href.startsWith("http") ? href : `https://www.gog.com${href}`,
+      });
+    }
+  });
 
-    return games.slice(0, 10);
-  } catch (err) {
-    console.error("❌ Lỗi GOG:", err.message);
-    return [];
-  }
+  return games.slice(0, 10);
 }
 
 /* ========================= STEAM ========================= */
-async function getSteamFreeGames() {
-  try {
-    const { data } = await axios.get(
-      "https://store.steampowered.com/api/featuredcategories/?cc=us"
+async function getSteamGames() {
+  const { data } = await axios.get(
+    "https://store.steampowered.com/api/featuredcategories/?cc=us"
+  );
+
+  const result = { freeNow: [], discounted: [] };
+
+  // miễn phí
+  if (data["specials"]?.items) {
+    const trulyFree = data["specials"].items.filter((g) => g.final_price === 0);
+    result.freeNow.push(
+      ...trulyFree.map((g) => ({
+        title: g.name,
+        url: `https://store.steampowered.com/app/${g.id}`,
+      }))
     );
-
-    const freeGames = [];
-    if (data["specials"]?.items) {
-      const trulyFree = data["specials"].items.filter(
-        (g) => g.final_price === 0
-      );
-      for (const g of trulyFree) {
-        freeGames.push({
-          title: g.name,
-          url: `https://store.steampowered.com/app/${g.id}`,
-        });
-      }
-    }
-
-    if (data["freeweekend"]?.items) {
-      for (const item of data["freeweekend"].items) {
-        freeGames.push({
-          title: item.name,
-          url: `https://store.steampowered.com/app/${item.id}`,
-        });
-      }
-    }
-
-    return freeGames;
-  } catch (err) {
-    console.error("❌ Lỗi Steam:", err.message);
-    return [];
   }
+
+  // đang giảm giá
+  if (data["specials"]?.items) {
+    const sale = data["specials"].items
+      .filter((g) => g.discount_percent > 0 && g.final_price > 0)
+      .slice(0, 10);
+    for (const g of sale) {
+      result.discounted.push({
+        title: g.name,
+        url: `https://store.steampowered.com/app/${g.id}`,
+        oldPrice: (g.original_price / 100).toFixed(2),
+        newPrice: (g.final_price / 100).toFixed(2),
+        discount: g.discount_percent,
+      });
+    }
+  }
+
+  return result;
 }
 
 /* ========================= UBISOFT ========================= */
-async function getUbisoftFreeGames() {
+async function getUbisoftGames() {
   try {
     const { data } = await axios.get(
       "https://store.ubisoft.com/api/free-games?locale=en-US"
     );
-    if (!data?.data?.length) return [];
-    return data.data.map((g) => ({
-      title: g.attributes.name,
-      url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
-    }));
-  } catch (err) {
-    console.error("❌ Lỗi Ubisoft:", err.message);
-    return [];
+    if (!data?.data?.length) return { freeNow: [] };
+    return {
+      freeNow: data.data.map((g) => ({
+        title: g.attributes.name,
+        url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
+      })),
+    };
+  } catch {
+    return { freeNow: [] };
   }
 }
 
-/* ========================= XBOX (placeholder) ========================= */
-async function getXboxFreeGames() {
-  return [];
+/* ========================= XBOX ========================= */
+async function getXboxGames() {
+  return { freeNow: [], discounted: [] };
 }
 
 /* ========================= MAIN HANDLER ========================= */
 export default async function handler(req, res) {
-  console.log("🔍 Đang kiểm tra game miễn phí...");
-
   const silent = req.query.silent === "true";
 
-  const [
-    { freeNow, comingSoon, discounted },
-    gogGames,
-    steamGames,
-    ubisoftGames,
-    xboxGames,
-  ] = await Promise.all([
-    getEpicFreeGames(),
-    getGOGFreeGames(),
-    getSteamFreeGames(),
-    getUbisoftFreeGames(),
-    getXboxFreeGames(),
+  const [epic, gog, steam, ubisoft, xbox] = await Promise.all([
+    getEpicGames(),
+    getGOGGames(),
+    getSteamGames(),
+    getUbisoftGames(),
+    getXboxGames(),
   ]);
 
-  let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
+  let msg = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
-  // ===== EPIC =====
-  message += "🆓 <b>Epic Games — Free Now</b>\n";
-  if (freeNow.length > 0) {
-    freeNow.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else {
-    message += "🚫 Không có game miễn phí.\n";
-  }
-
-  if (comingSoon.length > 0) {
-    message += "\n⏳ <b>Sắp miễn phí</b>\n";
-    comingSoon.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  }
-
-  if (discounted.length > 0) {
-    message += "\n💸 <b>Đang giảm giá</b>\n";
-    discounted.forEach((g) => {
-      const original = g.originalPrice ? `~$${g.originalPrice}~` : "";
-      const sale = g.discountPrice ? `<b>$${g.discountPrice}</b>` : "";
-      message += `• <a href="${g.url}">${g.title}</a> — ${original} ${sale} (-${g.discount}%)\n`;
-    });
-  }
-
-  message += "\n────────────────────\n";
+  // ===== Epic =====
+  msg += "🆓 <b>Epic Games — Free Now</b>\n";
+  msg +=
+    epic.freeNow.length > 0
+      ? epic.freeNow
+          .map((g) => `• <a href="${g.url}">${g.title}</a>`)
+          .join("\n")
+      : "🚫 Không có game miễn phí.";
+  if (epic.comingSoon.length)
+    msg +=
+      "\n\n⏳ <b>Sắp miễn phí</b>\n" +
+      epic.comingSoon
+        .map((g) => `• <a href="${g.url}">${g.title}</a>`)
+        .join("\n");
+  if (epic.discounted.length)
+    msg +=
+      "\n\n💸 <b>Đang giảm giá</b>\n" +
+      epic.discounted
+        .map(
+          (g) =>
+            `• <a href="${g.url}">${g.title}</a> — ~$${g.oldPrice}~ <b>$${g.newPrice}</b> (-${g.discount}%)`
+        )
+        .join("\n");
+  msg += "\n\n────────────────────\n";
 
   // ===== GOG =====
-  if (gogGames.length > 0) {
-    message += "🧩 <b>GOG — Free & Deals</b>\n";
-    gogGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else {
-    message += "🧩 <b>GOG</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
+  msg += "🧩 <b>GOG — Free & Deals</b>\n";
+  msg += gog.length
+    ? gog
+        .map((g) =>
+          g.discount
+            ? `• <a href="${g.url}">${g.title}</a> — ~$${g.oldPrice}~ <b>$${g.newPrice}</b> (-${g.discount}%)`
+            : `• <a href="${g.url}">${g.title}</a>`
+        )
+        .join("\n")
+    : "🚫 Không có game miễn phí hiện tại.";
+  msg += "\n\n────────────────────\n";
 
-  message += "\n────────────────────\n";
+  // ===== Steam =====
+  msg += "🔥 <b>Steam — Free & Deals</b>\n";
+  if (steam.freeNow.length)
+    msg += steam.freeNow
+      .map((g) => `• <a href="${g.url}">${g.title}</a>`)
+      .join("\n");
+  if (steam.discounted.length)
+    msg +=
+      "\n\n💸 <b>Đang giảm giá</b>\n" +
+      steam.discounted
+        .map(
+          (g) =>
+            `• <a href="${g.url}">${g.title}</a> — ~$${g.oldPrice}~ <b>$${g.newPrice}</b> (-${g.discount}%)`
+        )
+        .join("\n");
+  if (!steam.freeNow.length && !steam.discounted.length)
+    msg += "🚫 Không có game miễn phí hiện tại.";
+  msg += "\n\n────────────────────\n";
 
-  // ===== STEAM =====
-  if (steamGames.length > 0) {
-    message += "🔥 <b>Steam — Free Games</b>\n";
-    steamGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else {
-    message += "🔥 <b>Steam</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
+  // ===== Ubisoft =====
+  msg += "🎯 <b>Ubisoft — Free Now</b>\n";
+  msg += ubisoft.freeNow.length
+    ? ubisoft.freeNow
+        .map((g) => `• <a href="${g.url}">${g.title}</a>`)
+        .join("\n")
+    : "🚫 Không có game miễn phí hiện tại.";
+  msg += "\n\n────────────────────\n";
 
-  message += "\n────────────────────\n";
+  // ===== Xbox =====
+  msg += "🎮 <b>Xbox — Free & Deals</b>\n";
+  msg += xbox.freeNow?.length
+    ? xbox.freeNow.map((g) => `• <a href="${g.url}">${g.title}</a>`).join("\n")
+    : "🚫 Không có game miễn phí hiện tại.";
 
-  // ===== UBISOFT =====
-  if (ubisoftGames.length > 0) {
-    message += "🎯 <b>Ubisoft — Free & Deals</b>\n";
-    ubisoftGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else {
-    message += "🎯 <b>Ubisoft</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
-
-  message += "\n────────────────────\n";
-
-  // ===== XBOX =====
-  if (xboxGames.length > 0) {
-    message += "🎮 <b>Xbox — Free & Deals</b>\n";
-    xboxGames.forEach(
-      (g) => (message += `• <a href="${g.url}">${g.title}</a>\n`)
-    );
-  } else {
-    message += "🎮 <b>Xbox</b>\n🚫 Không có game miễn phí hiện tại.\n";
-  }
-
-  message +=
+  msg +=
     "\n\n✨ <i>Nhấn vào link để nhận game miễn phí ngay!</i>\n#FreeGames #Epic #GOG #Steam #Ubisoft #Xbox";
 
-  if (!silent) await sendToAll(message);
-  res.status(200).json({ success: true, message });
+  if (!silent) await sendToAll(msg);
+  res.status(200).json({ success: true, message: msg });
 }
