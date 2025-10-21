@@ -159,19 +159,45 @@ async function getSteamGames() {
 }
 
 /* ========================= UBISOFT ========================= */
+import axios from "axios";
+import * as cheerio from "cheerio";
+
 async function getUbisoftGames() {
   try {
+    const freeNow = [];
+
     const { data } = await axios.get(
       "https://store.ubisoft.com/api/free-games?locale=en-US"
     );
-    if (!data?.data?.length) return { freeNow: [] };
-    return {
-      freeNow: data.data.map((g) => ({
-        title: g.attributes.name,
-        url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
-      })),
-    };
-  } catch {
+
+    if (data?.data?.length) {
+      freeNow.push(
+        ...data.data.map((g) => ({
+          title: g.attributes.name,
+          url: `https://store.ubisoft.com/en-us/${g.attributes.slug}.html`,
+        }))
+      );
+    }
+
+    const freeToPlayURL = "https://store.ubisoft.com/sea/games/free?lang=en_SG";
+    const res = await axios.get(freeToPlayURL);
+    const $ = cheerio.load(res.data);
+
+    $(".product-card").each((_, el) => {
+      const title = $(el).find(".product-card__title").text().trim();
+      const url =
+        "https://store.ubisoft.com" +
+        ($(el).find("a.product-card__link").attr("href") || "");
+      const price = $(el).find(".price-item").text().trim();
+
+      if (/free/i.test(price)) {
+        freeNow.push({ title, url });
+      }
+    });
+
+    return { freeNow };
+  } catch (err) {
+    console.error("Error fetching Ubisoft games:", err.message);
     return { freeNow: [] };
   }
 }
