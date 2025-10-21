@@ -224,7 +224,6 @@ export default async function handler(req, res) {
 
   let message = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
-  // Epic
   message += "🆓 <b>Epic Games</b>\n";
   if (freeNow.length)
     freeNow.forEach(
@@ -233,7 +232,6 @@ export default async function handler(req, res) {
   else message += "🚫 Không có game miễn phí.\n";
   message += "───────────────\n";
 
-  // GOG
   message += "🧩 <b>GOG</b>\n";
   if (gogGames.length)
     gogGames.forEach(
@@ -242,7 +240,6 @@ export default async function handler(req, res) {
   else message += "🚫 Không có game miễn phí.\n";
   message += "───────────────\n";
 
-  // Steam
   message += "🔥 <b>Steam</b>\n";
   if (steamGames.length)
     steamGames.forEach(
@@ -251,7 +248,6 @@ export default async function handler(req, res) {
   else message += "🚫 Không có game miễn phí.\n";
   message += "───────────────\n";
 
-  // Ubisoft
   message += "🎯 <b>Ubisoft</b>\n";
   if (ubisoftGames.length)
     ubisoftGames.forEach(
@@ -260,7 +256,6 @@ export default async function handler(req, res) {
   else message += "🚫 Không có game miễn phí.\n";
   message += "───────────────\n";
 
-  // Xbox
   message += "🎮 <b>Xbox</b>\n";
   if (xboxGames.length)
     xboxGames.forEach(
