@@ -221,9 +221,9 @@ async function getXboxGames() {
 }
 
 export default async function handler(req, res) {
-  const internalKey = req.headers["x-internal-key"];
+  const internalKey = req.headers.authorization?.replace("Bearer ", "");
   if (internalKey !== process.env.INTERNAL_KEY) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   const silent = req.query.silent === "true";
