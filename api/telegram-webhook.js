@@ -132,10 +132,11 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
   const TELEGRAM_TOKEN = process.env.BOT_TOKEN;
-  const BASE_URL =
-    process.env.BASE_URL || process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : undefined;
+  const BASE_URL = process.env.BASE_URL
+    ? process.env.BASE_URL
+    : process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : undefined;
 
   if (!TELEGRAM_TOKEN) return res.status(500).send("Missing BOT_TOKEN");
 
