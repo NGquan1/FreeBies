@@ -194,7 +194,7 @@ export default async function handler(req, res) {
       try {
         const resp = await axios.get(checkUrl, {
           headers: {
-            "x-internal-key": process.env.INTERNAL_KEY, // ✅ thêm dòng này
+            Authorization: `Bearer ${process.env.INTERNAL_KEY}`, // ✅ sửa lại
           },
         });
 
