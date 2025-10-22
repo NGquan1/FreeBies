@@ -185,12 +185,19 @@ export default async function handler(req, res) {
         await sendReply(TELEGRAM_API, chatId, reply);
         return res.status(200).send("OK");
       }
+
       const checkUrl = `${BASE_URL.replace(
         /\/$/,
         ""
       )}/api/check-free-games?silent=true`;
+
       try {
-        const resp = await axios.get(checkUrl);
+        const resp = await axios.get(checkUrl, {
+          headers: {
+            "x-internal-key": process.env.INTERNAL_KEY, // ✅ thêm dòng này
+          },
+        });
+
         const msg = resp.data?.message || "❌ Không lấy được danh sách.";
         await sendReply(TELEGRAM_API, chatId, msg);
       } catch (err) {
@@ -201,6 +208,7 @@ export default async function handler(req, res) {
           "❌ Lỗi khi lấy danh sách game miễn phí."
         );
       }
+
       return res.status(200).send("OK");
     }
 

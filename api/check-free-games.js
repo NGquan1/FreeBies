@@ -221,6 +221,11 @@ async function getXboxGames() {
 }
 
 export default async function handler(req, res) {
+  const internalKey = req.headers["x-internal-key"];
+  if (internalKey !== process.env.INTERNAL_KEY) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
   const silent = req.query.silent === "true";
 
   const [epic, gog, steam, ubisoft, xbox] = await Promise.all([
