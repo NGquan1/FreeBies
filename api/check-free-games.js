@@ -9,7 +9,6 @@ const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
 const COLLECTION = "notified_users";
 
-/* ========================= MONGO HELPERS ========================= */
 async function getMongoCollection() {
   const client = new MongoClient(MONGODB_URI);
   await client.connect();
@@ -26,7 +25,6 @@ async function getAllUsers() {
   }
 }
 
-/* ========================= TELEGRAM SEND ========================= */
 async function sendToAll(message) {
   const botToken = process.env.BOT_TOKEN;
   const users = await getAllUsers();
@@ -43,7 +41,6 @@ async function sendToAll(message) {
   await Promise.all(promises);
 }
 
-/* ========================= EPIC GAMES ========================= */
 async function getEpicGames() {
   const url =
     "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions";
@@ -85,7 +82,6 @@ async function getEpicGames() {
   return result;
 }
 
-/* ========================= GOG ========================= */
 async function getGOGGames() {
   const url = "https://www.gog.com/en/games?price=free%2Cdiscounted&page=1";
   const { data } = await axios.get(url, {
@@ -120,7 +116,6 @@ async function getGOGGames() {
   return games.slice(0, 10);
 }
 
-/* ========================= STEAM ========================= */
 async function getSteamGames() {
   const { data } = await axios.get(
     "https://store.steampowered.com/api/featuredcategories/?cc=us"
@@ -128,7 +123,6 @@ async function getSteamGames() {
 
   const result = { freeNow: [], discounted: [] };
 
-  // miễn phí
   if (data["specials"]?.items) {
     const trulyFree = data["specials"].items.filter((g) => g.final_price === 0);
     result.freeNow.push(
@@ -139,7 +133,6 @@ async function getSteamGames() {
     );
   }
 
-  // đang giảm giá
   if (data["specials"]?.items) {
     const sale = data["specials"].items
       .filter((g) => g.discount_percent > 0 && g.final_price > 0)
@@ -158,13 +151,11 @@ async function getSteamGames() {
   return result;
 }
 
-/* ========================= UBISOFT ========================= */
 export async function getUbisoftGames() {
   try {
     const freeNow = [];
     const discounts = [];
 
-    /* 🟢 1️⃣ Game miễn phí / Free-to-play */
     const freeApi = "https://store.ubisoft.com/api/free-games?locale=en_SG";
     try {
       const { data } = await axios.get(freeApi, { timeout: 10000 });
@@ -172,7 +163,7 @@ export async function getUbisoftGames() {
         for (const g of data.data) {
           const name = g.attributes?.name;
           const slug = g.attributes?.slug;
-          const id = g.id; // dùng cả ID để build URL chính xác
+          const id = g.id;
           if (name && slug && id) {
             freeNow.push({
               title: name.trim(),
@@ -185,7 +176,6 @@ export async function getUbisoftGames() {
       console.warn("⚠️ Ubisoft free API error:", err.message);
     }
 
-    /* 🟣 2️⃣ Game đang giảm giá (crawl từ trang SEA) */
     try {
       const dealsUrl = "https://store.ubisoft.com/sea/home?lang=en_SG";
       const { data } = await axios.get(dealsUrl, {
@@ -226,12 +216,10 @@ export async function getUbisoftGames() {
   }
 }
 
-/* ========================= XBOX ========================= */
 async function getXboxGames() {
   return { freeNow: [], discounted: [] };
 }
 
-/* ========================= MAIN HANDLER ========================= */
 export default async function handler(req, res) {
   const silent = req.query.silent === "true";
 
