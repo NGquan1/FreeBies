@@ -69,82 +69,7 @@ async function addAchievementsToUser(chatId, names) {
   if (!names || names.length === 0) return;
   const col = await getCollection();
   const ops = names.map((n) => ({ name: n, unlockedAt: new Date() }));
-  await col.updateOne(
-    { chatId: Number(chatId) },
-    { $push: { achievements: { $each: ops } } }
-  );
-}
-
-// Handler functions for callback queries
-async function handleCheckCommand(telegramApi, chatId, baseUrl) {
-  if (!baseUrl) {
-    await sendReply(telegramApi, chatId, "❗BASE_URL chưa được cấu hình.");
-    return;
-  }
-
-  const checkUrl = `${baseUrl.replace(
-    /\/$/,
-    ""
-  )}/api/check-free-games?silent=true`;
-  try {
-    const resp = await axios.get(checkUrl);
-    const msg = resp.data?.message || "❌ Không lấy được danh sách.";
-    await sendReply(telegramApi, chatId, msg, {
-      reply_markup: {
-        inline_keyboard: [[{ text: "🔄 Làm mới", callback_data: "check" }]],
-      },
-    });
-  } catch (err) {
-    console.error("Lỗi gọi check-free-games:", err.message);
-    await sendReply(
-      telegramApi,
-      chatId,
-      "❌ Lỗi khi lấy danh sách game miễn phí."
-    );
-  }
-}
-
-async function handleMyGamesCommand(telegramApi, chatId) {
-  const user = await getUser(chatId);
-  const list = user?.claimedList || [];
-  let reply;
-
-  if (!list.length) {
-    reply = "📭 Bạn chưa claim game nào.";
-  } else {
-    const html = list
-      .slice(-20)
-      .map((g, i) => `${i + 1}. <a href="${g.url}">${g.title}</a>`)
-      .join("\n");
-    reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
-  }
-
-  await sendReply(telegramApi, chatId, reply, {
-    reply_markup: {
-      inline_keyboard: [[{ text: "🔙 Quay lại menu", callback_data: "menu" }]],
-    },
-  });
-}
-
-async function handleAchievementsCommand(telegramApi, chatId) {
-  const user = await getUser(chatId);
-  const ach = user?.achievements || [];
-  let reply;
-
-  if (!ach.length) {
-    reply = "🏅 Bạn chưa có achievement nào.";
-  } else {
-    const lines = ach.map(
-      (a) => `• ${a.name} — ${new Date(a.unlockedAt).toLocaleDateString()}`
-    );
-    reply = `<b>🏆 Thành tích của bạn</b>\n${lines.join("\n")}`;
-  }
-
-  await sendReply(telegramApi, chatId, reply, {
-    reply_markup: {
-      inline_keyboard: [[{ text: "🔙 Quay lại menu", callback_data: "menu" }]],
-    },
-  });
+  await col.updateOne({ chatId }, { $push: { achievements: { $each: ops } } });
 }
 
 const MILESTONES = [
@@ -272,19 +197,8 @@ export default async function handler(req, res) {
 
     if (text === "/start") {
       reply =
-        "👋 Chào mừng bạn! Hãy dùng các nút bên dưới để tương tác với bot:";
-      await sendReply(TELEGRAM_API, chatId, reply, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🆓 Xem game free", callback_data: "check" }],
-            [
-              { text: "🎮 My Games", callback_data: "mygames" },
-              { text: "🏆 Thành tích", callback_data: "achievements" },
-            ],
-            [{ text: "ℹ️ Hướng dẫn claim game", callback_data: "help" }],
-          ],
-        },
-      });
+        "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
+      await sendReply(TELEGRAM_API, chatId, reply);
       return res.status(200).send("OK");
     }
 
