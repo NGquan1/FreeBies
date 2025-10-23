@@ -197,8 +197,19 @@ export default async function handler(req, res) {
 
     if (text === "/start") {
       reply =
-        "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
-      await sendReply(TELEGRAM_API, chatId, reply);
+        "👋 Chào mừng bạn! Sử dụng các nút bên dưới để tương tác với bot:";
+      await sendReply(TELEGRAM_API, chatId, reply, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🆓 Xem game free", callback_data: "check" }],
+            [
+              { text: "🎮 My Games", callback_data: "mygames" },
+              { text: "🏆 Thành tích", callback_data: "achievements" },
+            ],
+            [{ text: "ℹ️ Hướng dẫn claim", callback_data: "help" }],
+          ],
+        },
+      });
       return res.status(200).send("OK");
     }
 
@@ -231,13 +242,27 @@ export default async function handler(req, res) {
         });
 
         const msg = resp.data?.message || "❌ Không lấy được danh sách.";
-        await sendReply(TELEGRAM_API, chatId, msg);
+        await sendReply(TELEGRAM_API, chatId, msg, {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔄 Làm mới", callback_data: "check" }],
+              [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
+            ],
+          },
+        });
       } catch (err) {
         console.error("Lỗi gọi check-free-games:", err.message);
         await sendReply(
           TELEGRAM_API,
           chatId,
-          "❌ Lỗi khi lấy danh sách game miễn phí."
+          "❌ Lỗi khi lấy danh sách game miễn phí.",
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
+              ],
+            },
+          }
         );
       }
 
@@ -314,7 +339,14 @@ export default async function handler(req, res) {
           .join("\n");
         reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
       }
-      await sendReply(TELEGRAM_API, chatId, reply);
+      await sendReply(TELEGRAM_API, chatId, reply, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Làm mới", callback_data: "mygames" }],
+            [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
+          ],
+        },
+      });
       return res.status(200).send("OK");
     }
 
