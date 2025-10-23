@@ -3,7 +3,7 @@ import { MongoClient } from "mongodb";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
-const COLLECTION = "notified_users";
+const COLLECTION = "users";
 const ADMIN_ID = process.env.ADMIN_ID;
 
 let cachedClient = null;
