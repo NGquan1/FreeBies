@@ -23,7 +23,6 @@ async function getCollection() {
   return db.collection(COLLECTION);
 }
 
-/* ---------- helper user ops ---------- */
 async function addUser(chatId, meta = {}) {
   const col = await getCollection();
   await col.updateOne(
@@ -73,7 +72,6 @@ async function addAchievementsToUser(chatId, names) {
   await col.updateOne({ chatId }, { $push: { achievements: { $each: ops } } });
 }
 
-/* ---------- achievement rules ---------- */
 const MILESTONES = [
   { count: 1, name: "🎯 Người mới nhận thưởng" },
   { count: 5, name: "🔥 Thợ săn game thực thụ" },
@@ -113,7 +111,6 @@ async function checkAndUnlockAchievements(user, telegramApi) {
   return unlockedNow;
 }
 
-/* ---------- send text helper ---------- */
 async function sendReply(telegramApi, chatId, text, opt = {}) {
   try {
     await axios.post(`${telegramApi}/sendMessage`, {
@@ -127,7 +124,6 @@ async function sendReply(telegramApi, chatId, text, opt = {}) {
   }
 }
 
-/* ---------- main handler ---------- */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
@@ -150,7 +146,6 @@ export default async function handler(req, res) {
   if (!chatId || !text) return res.status(200).send("No message content");
 
   try {
-    // ensure user exists
     const meta = {
       username: message.from?.username,
       first_name: message.from?.first_name,
@@ -161,7 +156,6 @@ export default async function handler(req, res) {
     console.log(`📩 Message from ${chatId}: ${text}`);
     let reply = "";
 
-    // /start
     if (text === "/start") {
       reply =
         "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
@@ -169,7 +163,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // /stop
     if (text === "/stop") {
       const col = await getCollection();
       await col.deleteOne({ chatId });
@@ -178,7 +171,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // /check => call your existing check-free-games endpoint if provided
     if (text === "/check") {
       if (!BASE_URL) {
         reply =
@@ -195,7 +187,7 @@ export default async function handler(req, res) {
       try {
         const resp = await axios.get(checkUrl, {
           headers: {
-            Authorization: `Bearer ${process.env.INTERNAL_KEY}`, // ✅ sửa lại
+            Authorization: `Bearer ${process.env.INTERNAL_KEY}`,
           },
         });
 
@@ -213,11 +205,7 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // /claim Tên game | URL  -> add to user's claimedList, then check milestones
     if (text.toLowerCase().startsWith("/claim")) {
-      // Accept formats:
-      // /claim Title | https://...
-      // /claim https://... (if user forwards url only, we try to fetch title = url)
       const payload = text.replace("/claim", "").trim();
       if (!payload) {
         reply =
@@ -229,20 +217,16 @@ export default async function handler(req, res) {
       let title = null;
       let url = null;
 
-      // try split by '|'
       if (payload.includes("|")) {
         const parts = payload.split("|");
         title = parts[0].trim();
         url = parts[1].trim();
       } else {
-        // if single token, assume URL (or title without url)
-        // if looks like url -> set url, and title fallback to url
         const first = payload.split(/\s+/)[0];
         if (first.startsWith("http")) {
           url = first;
           title = payload; // maybe user included title too
         } else {
-          // no url given
           reply =
             "⚠️ Cần URL để claim. Dùng: <code>/claim Tên game | URL</code>";
           await sendReply(TELEGRAM_API, chatId, reply);
@@ -250,12 +234,10 @@ export default async function handler(req, res) {
         }
       }
 
-      // normalize URL (basic)
       try {
         url = url.split(" ").shift();
       } catch (e) {}
 
-      // check duplicate
       const already = await userHasClaimed(chatId, url);
       if (already) {
         reply = `⚠️ Bạn đã lưu game này trước đó rồi: <a href="${url}">${title}</a>`;
@@ -263,16 +245,12 @@ export default async function handler(req, res) {
         return res.status(200).send("OK");
       }
 
-      // push claim
       await addClaim(chatId, { title, url });
 
-      // fetch fresh user to check achievements
       const user = await getUser(chatId);
 
-      // check & unlock milestone achievements (if any)
       const unlocked = await checkAndUnlockAchievements(user, TELEGRAM_API);
 
-      // reply summary
       reply = `🎁 Đã lưu: <a href="${url}">${title}</a>\n✅ Tổng đã claim: ${
         user.claimedGames || 0
       }`;
@@ -285,14 +263,12 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // /mygames
     if (text === "/mygames") {
       const user = await getUser(chatId);
       const list = user?.claimedList || [];
       if (!list.length) {
         reply = "📭 Bạn chưa claim game nào.";
       } else {
-        // show last 20
         const html = list
           .slice(-20)
           .map((g, i) => `${i + 1}. <a href="${g.url}">${g.title}</a>`)
@@ -303,7 +279,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // /achievements
     if (text === "/achievements") {
       const user = await getUser(chatId);
       const ach = user?.achievements || [];
@@ -319,9 +294,20 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // admin /grant <chatId> <achievement name>
     if (text.startsWith("/grant")) {
-      if (!ADMIN_ID || String(chatId) !== String(ADMIN_ID)) {
+      console.log("Admin check:", {
+        chatId: chatId,
+        ADMIN_ID: ADMIN_ID,
+        envAdminId: process.env.ADMIN_ID,
+      });
+
+      if (!ADMIN_ID) {
+        reply = "❌ Chưa cấu hình ADMIN_ID trong biến môi trường";
+        await sendReply(TELEGRAM_API, chatId, reply);
+        return res.status(200).send("OK");
+      }
+
+      if (String(chatId) !== String(ADMIN_ID)) {
         reply = "🚫 Lệnh này chỉ dành cho admin.";
         await sendReply(TELEGRAM_API, chatId, reply);
         return res.status(200).send("OK");
@@ -334,7 +320,7 @@ export default async function handler(req, res) {
       }
       const targetId = parts[1];
       const name = parts.slice(2).join(" ").trim();
-      // add achievement to target regardless of count (admin grant)
+
       const targetUser = await getUser(targetId);
       if (!targetUser) {
         reply = "❗ Người dùng không tồn tại trong DB.";
@@ -350,7 +336,7 @@ export default async function handler(req, res) {
         return res.status(200).send("OK");
       }
       await addAchievementsToUser(targetId, [name]);
-      // notify target
+
       try {
         await sendReply(
           TELEGRAM_API,
@@ -363,7 +349,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // unknown command
     reply =
       "⚙️ Lệnh không hợp lệ.\nCác lệnh: /check /claim /mygames /achievements /start /stop";
     await sendReply(TELEGRAM_API, chatId, reply);
