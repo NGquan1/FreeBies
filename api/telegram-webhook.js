@@ -22,7 +22,6 @@ async function getCollection() {
 
 async function addUser(chatId, meta = {}) {
   const col = await getCollection();
-  // Chuyển chatId về số khi lưu
   const numericChatId = Number(chatId);
   await col.updateOne(
     { chatId: numericChatId },
@@ -44,7 +43,6 @@ async function addUser(chatId, meta = {}) {
 
 async function getUser(chatId) {
   const col = await getCollection();
-  // Chuyển chatId về số để tìm kiếm
   return await col.findOne({ chatId: Number(chatId) });
 }
 
@@ -86,9 +84,7 @@ async function checkAndUnlockAchievements(user, telegramApi) {
 
   for (const m of MILESTONES) {
     if (curCount >= m.count && !owned.has(m.name)) {
-      // unlock
       unlockedNow.push(m.name);
-      // send message to user
       try {
         await axios.post(`${telegramApi}/sendMessage`, {
           chat_id: user.chatId,
@@ -269,19 +265,25 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    if (text === "/mygames") {
+    // (Tôi giả định bạn đã cập nhật text check từ câu trả lời trước của tôi)
+    if (text === "/mygames" || text === "🕹️ Game của tôi") {
       const user = await getUser(chatId);
       const list = user?.claimedList || [];
       if (!list.length) {
         reply = "📭 Bạn chưa claim game nào.";
+        await sendReply(TELEGRAM_API, chatId, reply);
       } else {
+        // THAY ĐỔI: Chỉ hiển thị g.title, không còn thẻ <a>
         const html = list
           .slice(-20)
-          .map((g, i) => `${i + 1}. <a href="${g.url}">${g.title}</a>`)
+          .map((g, i) => `${i + 1}. ${g.title}`) // Bỏ thẻ <a>
           .join("\n");
-        reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
+        reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`; // Gửi và tắt xem trước link (vì g.title có thể là 1 link)
+
+        await sendReply(TELEGRAM_API, chatId, reply, {
+          disable_web_page_preview: true,
+        });
       }
-      await sendReply(TELEGRAM_API, chatId, reply);
       return res.status(200).send("OK");
     }
 
@@ -324,7 +326,7 @@ export default async function handler(req, res) {
         await sendReply(TELEGRAM_API, chatId, reply);
         return res.status(200).send("OK");
       }
-      const targetId = Number(parts[1]); // Chuyển về số
+      const targetId = Number(parts[1]);
       const name = parts.slice(2).join(" ").trim();
 
       console.log("Checking target user:", { targetId });
