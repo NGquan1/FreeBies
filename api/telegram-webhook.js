@@ -10,10 +10,7 @@ let cachedClient = null;
 async function getDb() {
   if (!MONGODB_URI) throw new Error("Thiếu MONGODB_URI");
   if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
+    cachedClient = new MongoClient(MONGODB_URI);
     await cachedClient.connect();
   }
   return cachedClient.db(DB_NAME);
@@ -321,9 +318,13 @@ export default async function handler(req, res) {
       const targetId = parts[1];
       const name = parts.slice(2).join(" ").trim();
 
+      console.log("Checking target user:", { targetId });
       const targetUser = await getUser(targetId);
+      console.log("Target user found:", targetUser);
+
       if (!targetUser) {
-        reply = "❗ Người dùng không tồn tại trong DB.";
+        reply =
+          "❗ Người dùng không tồn tại trong DB. Hãy đảm bảo người dùng đã dùng lệnh /start";
         await sendReply(TELEGRAM_API, chatId, reply);
         return res.status(200).send("OK");
       }
