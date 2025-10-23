@@ -69,7 +69,82 @@ async function addAchievementsToUser(chatId, names) {
   if (!names || names.length === 0) return;
   const col = await getCollection();
   const ops = names.map((n) => ({ name: n, unlockedAt: new Date() }));
-  await col.updateOne({ chatId }, { $push: { achievements: { $each: ops } } });
+  await col.updateOne(
+    { chatId: Number(chatId) },
+    { $push: { achievements: { $each: ops } } }
+  );
+}
+
+// Handler functions for callback queries
+async function handleCheckCommand(telegramApi, chatId, baseUrl) {
+  if (!baseUrl) {
+    await sendReply(telegramApi, chatId, "❗BASE_URL chưa được cấu hình.");
+    return;
+  }
+
+  const checkUrl = `${baseUrl.replace(
+    /\/$/,
+    ""
+  )}/api/check-free-games?silent=true`;
+  try {
+    const resp = await axios.get(checkUrl);
+    const msg = resp.data?.message || "❌ Không lấy được danh sách.";
+    await sendReply(telegramApi, chatId, msg, {
+      reply_markup: {
+        inline_keyboard: [[{ text: "🔄 Làm mới", callback_data: "check" }]],
+      },
+    });
+  } catch (err) {
+    console.error("Lỗi gọi check-free-games:", err.message);
+    await sendReply(
+      telegramApi,
+      chatId,
+      "❌ Lỗi khi lấy danh sách game miễn phí."
+    );
+  }
+}
+
+async function handleMyGamesCommand(telegramApi, chatId) {
+  const user = await getUser(chatId);
+  const list = user?.claimedList || [];
+  let reply;
+
+  if (!list.length) {
+    reply = "📭 Bạn chưa claim game nào.";
+  } else {
+    const html = list
+      .slice(-20)
+      .map((g, i) => `${i + 1}. <a href="${g.url}">${g.title}</a>`)
+      .join("\n");
+    reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
+  }
+
+  await sendReply(telegramApi, chatId, reply, {
+    reply_markup: {
+      inline_keyboard: [[{ text: "🔙 Quay lại menu", callback_data: "menu" }]],
+    },
+  });
+}
+
+async function handleAchievementsCommand(telegramApi, chatId) {
+  const user = await getUser(chatId);
+  const ach = user?.achievements || [];
+  let reply;
+
+  if (!ach.length) {
+    reply = "🏅 Bạn chưa có achievement nào.";
+  } else {
+    const lines = ach.map(
+      (a) => `• ${a.name} — ${new Date(a.unlockedAt).toLocaleDateString()}`
+    );
+    reply = `<b>🏆 Thành tích của bạn</b>\n${lines.join("\n")}`;
+  }
+
+  await sendReply(telegramApi, chatId, reply, {
+    reply_markup: {
+      inline_keyboard: [[{ text: "🔙 Quay lại menu", callback_data: "menu" }]],
+    },
+  });
 }
 
 const MILESTONES = [
@@ -113,12 +188,18 @@ async function checkAndUnlockAchievements(user, telegramApi) {
 
 async function sendReply(telegramApi, chatId, text, opt = {}) {
   try {
-    await axios.post(`${telegramApi}/sendMessage`, {
+    const payload = {
       chat_id: chatId,
       text,
       parse_mode: opt.parse_mode || "HTML",
       disable_web_page_preview: opt.disable_web_page_preview || false,
-    });
+    };
+
+    if (opt.reply_markup) {
+      payload.reply_markup = opt.reply_markup;
+    }
+
+    await axios.post(`${telegramApi}/sendMessage`, payload);
   } catch (err) {
     console.error("Lỗi gửi Telegram:", err.response?.data || err.message);
   }
@@ -139,7 +220,40 @@ export default async function handler(req, res) {
   const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
   const body = req.body || {};
+  const callback_query = body.callback_query;
   const message = body.message || body.edited_message;
+
+  // Xử lý callback query (khi user bấm nút)
+  if (callback_query) {
+    const chatId = callback_query.message.chat.id;
+    const data = callback_query.data;
+
+    // Ẩn loading state của nút
+    try {
+      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
+        callback_query_id: callback_query.id,
+      });
+    } catch (err) {
+      console.error("Lỗi answer callback:", err.message);
+    }
+
+    // Xử lý các loại callback
+    switch (data) {
+      case "check":
+        await handleCheckCommand(TELEGRAM_API, chatId, BASE_URL);
+        break;
+      case "mygames":
+        await handleMyGamesCommand(TELEGRAM_API, chatId);
+        break;
+      case "achievements":
+        await handleAchievementsCommand(TELEGRAM_API, chatId);
+        break;
+    }
+
+    return res.status(200).send("OK");
+  }
+
+  // Xử lý tin nhắn thông thường
   const chatId = message?.chat?.id;
   const text = message?.text?.trim?.();
 
@@ -158,8 +272,19 @@ export default async function handler(req, res) {
 
     if (text === "/start") {
       reply =
-        "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
-      await sendReply(TELEGRAM_API, chatId, reply);
+        "👋 Chào mừng bạn! Hãy dùng các nút bên dưới để tương tác với bot:";
+      await sendReply(TELEGRAM_API, chatId, reply, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🆓 Xem game free", callback_data: "check" }],
+            [
+              { text: "🎮 My Games", callback_data: "mygames" },
+              { text: "🏆 Thành tích", callback_data: "achievements" },
+            ],
+            [{ text: "ℹ️ Hướng dẫn claim game", callback_data: "help" }],
+          ],
+        },
+      });
       return res.status(200).send("OK");
     }
 
@@ -225,7 +350,7 @@ export default async function handler(req, res) {
         const first = payload.split(/\s+/)[0];
         if (first.startsWith("http")) {
           url = first;
-          title = payload; // maybe user included title too
+          title = payload;
         } else {
           reply =
             "⚠️ Cần URL để claim. Dùng: <code>/claim Tên game | URL</code>";
