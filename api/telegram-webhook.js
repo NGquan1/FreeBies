@@ -145,40 +145,7 @@ export default async function handler(req, res) {
   const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 
   const body = req.body || {};
-  const callback_query = body.callback_query;
   const message = body.message || body.edited_message;
-
-  // Xử lý callback query (khi user bấm nút)
-  if (callback_query) {
-    const chatId = callback_query.message.chat.id;
-    const data = callback_query.data;
-
-    // Ẩn loading state của nút
-    try {
-      await axios.post(`${TELEGRAM_API}/answerCallbackQuery`, {
-        callback_query_id: callback_query.id,
-      });
-    } catch (err) {
-      console.error("Lỗi answer callback:", err.message);
-    }
-
-    // Xử lý các loại callback
-    switch (data) {
-      case "check":
-        await handleCheckCommand(TELEGRAM_API, chatId, BASE_URL);
-        break;
-      case "mygames":
-        await handleMyGamesCommand(TELEGRAM_API, chatId);
-        break;
-      case "achievements":
-        await handleAchievementsCommand(TELEGRAM_API, chatId);
-        break;
-    }
-
-    return res.status(200).send("OK");
-  }
-
-  // Xử lý tin nhắn thông thường
   const chatId = message?.chat?.id;
   const text = message?.text?.trim?.();
 
@@ -197,19 +164,8 @@ export default async function handler(req, res) {
 
     if (text === "/start") {
       reply =
-        "👋 Chào mừng bạn! Sử dụng các nút bên dưới để tương tác với bot:";
-      await sendReply(TELEGRAM_API, chatId, reply, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🆓 Xem game free", callback_data: "check" }],
-            [
-              { text: "🎮 My Games", callback_data: "mygames" },
-              { text: "🏆 Thành tích", callback_data: "achievements" },
-            ],
-            [{ text: "ℹ️ Hướng dẫn claim", callback_data: "help" }],
-          ],
-        },
-      });
+        "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
+      await sendReply(TELEGRAM_API, chatId, reply);
       return res.status(200).send("OK");
     }
 
@@ -242,27 +198,13 @@ export default async function handler(req, res) {
         });
 
         const msg = resp.data?.message || "❌ Không lấy được danh sách.";
-        await sendReply(TELEGRAM_API, chatId, msg, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔄 Làm mới", callback_data: "check" }],
-              [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
-            ],
-          },
-        });
+        await sendReply(TELEGRAM_API, chatId, msg);
       } catch (err) {
         console.error("Lỗi gọi check-free-games:", err.message);
         await sendReply(
           TELEGRAM_API,
           chatId,
-          "❌ Lỗi khi lấy danh sách game miễn phí.",
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
-              ],
-            },
-          }
+          "❌ Lỗi khi lấy danh sách game miễn phí."
         );
       }
 
@@ -339,14 +281,7 @@ export default async function handler(req, res) {
           .join("\n");
         reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
       }
-      await sendReply(TELEGRAM_API, chatId, reply, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔄 Làm mới", callback_data: "mygames" }],
-            [{ text: "🔙 Quay lại menu", callback_data: "menu" }],
-          ],
-        },
-      });
+      await sendReply(TELEGRAM_API, chatId, reply);
       return res.status(200).send("OK");
     }
 
