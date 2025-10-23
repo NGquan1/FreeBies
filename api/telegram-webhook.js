@@ -130,6 +130,8 @@ async function sendReply(telegramApi, chatId, text, opt = {}) {
   }
 }
 
+// ... (giữ nguyên tất cả các hàm bên trên: getDb, addUser, sendReply, ...)
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
@@ -162,22 +164,41 @@ export default async function handler(req, res) {
     console.log(`📩 Message from ${chatId}: ${text}`);
     let reply = "";
 
+    // THAY ĐỔI: Cập nhật /start để hiển thị bàn phím
     if (text === "/start") {
       reply =
-        "👋 Bạn đã được đăng ký nhận thông báo. Dùng /check để xem danh sách free, /claim Tên game | URL để lưu game, /mygames để xem, /achievements để xem thành tích.";
-      await sendReply(TELEGRAM_API, chatId, reply);
+        "👋 Chào mừng bạn! Bot sẽ thông báo khi có game miễn phí. Hãy sử dụng các nút bên dưới để tương tác:";
+      
+      // MỚI: Thêm đối tượng bàn phím
+      const options = {
+        reply_markup: {
+          keyboard: [
+            [{ text: "🎮 Check game free" }, { text: "🕹️ Game của tôi" }],
+            [{ text: "🏆 Thành tích" }, { text: "🚫 Dừng nhận tin" }]
+          ],
+          resize_keyboard: true // Tự động co giãn kích thước nút
+        }
+      };
+
+      await sendReply(TELEGRAM_API, chatId, reply, options); // Gửi kèm options
       return res.status(200).send("OK");
     }
 
-    if (text === "/stop") {
+    // THAY ĐỔI: Thêm check cho nút bấm "🚫 Dừng nhận tin"
+    if (text === "/stop" || text === "🚫 Dừng nhận tin") {
       const col = await getCollection();
       await col.deleteOne({ chatId });
-      reply = "👋 Bạn đã hủy đăng ký.";
-      await sendReply(TELEGRAM_API, chatId, reply);
+      reply = "👋 Bạn đã hủy đăng ký. Tạm biệt!";
+      
+      // MỚI: Gửi kèm yêu cầu xóa bàn phím
+      await sendReply(TELEGRAM_API, chatId, reply, { 
+        reply_markup: { remove_keyboard: true } 
+      });
       return res.status(200).send("OK");
     }
 
-    if (text === "/check") {
+    // THAY ĐỔI: Thêm check cho nút bấm "🎮 Check game free"
+    if (text === "/check" || text === "🎮 Check game free") {
       if (!BASE_URL) {
         reply =
           "❗BASE_URL chưa được cấu hình, không thể gọi API /check-free-games.";
@@ -186,7 +207,7 @@ export default async function handler(req, res) {
       }
 
       const checkUrl = `${BASE_URL.replace(
-        /\/$/,
+        /\ /$/
         ""
       )}/api/check-free-games?silent=true`;
 
@@ -269,7 +290,8 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    if (text === "/mygames") {
+    // THAY ĐỔI: Thêm check cho nút bấm "🕹️ Game của tôi"
+    if (text === "/mygames" || text === "🕹️ Game của tôi") {
       const user = await getUser(chatId);
       const list = user?.claimedList || [];
       if (!list.length) {
@@ -285,7 +307,8 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    if (text === "/achievements") {
+    // THAY ĐỔI: Thêm check cho nút bấm "🏆 Thành tích"
+    if (text === "/achievements" || text === "🏆 Thành tích") {
       const user = await getUser(chatId);
       const ach = user?.achievements || [];
       if (!ach.length) {
@@ -359,8 +382,9 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
+    // THAY ĐỔI: Cập nhật tin nhắn mặc định
     reply =
-      "⚙️ Lệnh không hợp lệ.\nCác lệnh: /check /claim /mygames /achievements /start /stop";
+      "⚙️ Lệnh không hợp lệ. Vui lòng sử dụng các nút bấm bên dưới hoặc gõ lệnh /claim.";
     await sendReply(TELEGRAM_API, chatId, reply);
     return res.status(200).send("OK");
   } catch (err) {
