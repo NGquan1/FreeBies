@@ -3,7 +3,7 @@ import { MongoClient } from "mongodb";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.DB_NAME || "freebies";
-const COLLECTION = "users";
+const COLLECTION = "notified_users";
 const ADMIN_ID = process.env.ADMIN_ID;
 
 let cachedClient = null;
@@ -22,11 +22,13 @@ async function getCollection() {
 
 async function addUser(chatId, meta = {}) {
   const col = await getCollection();
+  // Chuyển chatId về số khi lưu
+  const numericChatId = Number(chatId);
   await col.updateOne(
-    { chatId },
+    { chatId: numericChatId },
     {
       $setOnInsert: {
-        chatId,
+        chatId: numericChatId,
         username: meta.username || null,
         first_name: meta.first_name || null,
         last_name: meta.last_name || null,
@@ -42,7 +44,8 @@ async function addUser(chatId, meta = {}) {
 
 async function getUser(chatId) {
   const col = await getCollection();
-  return await col.findOne({ chatId });
+  // Chuyển chatId về số để tìm kiếm
+  return await col.findOne({ chatId: Number(chatId) });
 }
 
 async function addClaim(chatId, game) {
@@ -315,7 +318,7 @@ export default async function handler(req, res) {
         await sendReply(TELEGRAM_API, chatId, reply);
         return res.status(200).send("OK");
       }
-      const targetId = parts[1];
+      const targetId = Number(parts[1]); // Chuyển về số
       const name = parts.slice(2).join(" ").trim();
 
       console.log("Checking target user:", { targetId });
