@@ -265,7 +265,6 @@ export default async function handler(req, res) {
       return res.status(200).send("OK");
     }
 
-    // (Tôi giả định bạn đã cập nhật text check từ câu trả lời trước của tôi)
     if (text === "/mygames" || text === "🕹️ Game của tôi") {
       const user = await getUser(chatId);
       const list = user?.claimedList || [];
@@ -273,12 +272,11 @@ export default async function handler(req, res) {
         reply = "📭 Bạn chưa claim game nào.";
         await sendReply(TELEGRAM_API, chatId, reply);
       } else {
-        // THAY ĐỔI: Chỉ hiển thị g.title, không còn thẻ <a>
         const html = list
           .slice(-20)
-          .map((g, i) => `${i + 1}. ${g.title}`) // Bỏ thẻ <a>
+          .map((g, i) => `${i + 1}. ${g.title}`)
           .join("\n");
-        reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`; // Gửi và tắt xem trước link (vì g.title có thể là 1 link)
+        reply = `<b>🎮 Danh sách game đã claim (${list.length}):</b>\n${html}`;
 
         await sendReply(TELEGRAM_API, chatId, reply, {
           disable_web_page_preview: true,

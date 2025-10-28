@@ -18,11 +18,9 @@ const userSchema = new mongoose.Schema({
   last_name: String,
   joinedAt: { type: Date, default: Date.now },
 
-  // 🎁 Claim feature
   claimedGames: { type: Number, default: 0 },
   claimedList: [claimedGameSchema],
 
-  // 🏆 Achievement system
   achievements: [achievementSchema],
 });
 

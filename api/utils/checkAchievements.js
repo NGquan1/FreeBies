@@ -1,4 +1,3 @@
-// utils/checkAchievements.js
 import axios from "axios";
 import User from "../models/User.js";
 

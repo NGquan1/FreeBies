@@ -5,5 +5,16 @@
       "path": "/api/check-free-games",
       "schedule": "0 4 * * *"
     }
+  ],
+  "headers": [
+    {
+      "source": "/api/check-free-games",
+      "headers": [
+        {
+          "key": "Authorization",
+          "value": "Bearer @INTERNAL_KEY"
+        }
+      ]
+    }
   ]
 }
