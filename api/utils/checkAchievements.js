@@ -14,7 +14,6 @@ export async function checkAchievements(user, botToken) {
       user.achievements.push({ name: m.name });
       await user.save();
 
-      // Gửi thông báo Telegram
       await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
         chat_id: user.chatId,
         text: `🏆 Bạn vừa mở khóa thành tích mới: <b>${m.name}</b>!`,

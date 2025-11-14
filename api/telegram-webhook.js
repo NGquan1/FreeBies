@@ -192,7 +192,7 @@ export default async function handler(req, res) {
             Authorization: `Bearer ${process.env.INTERNAL_KEY}`,
             "Content-Type": "application/json",
           },
-          timeout: 20000, // 30 second timeout
+          timeout: 20000,
         });
 
         const msg = resp.data?.message || "❌ Không lấy được danh sách.";
@@ -205,7 +205,6 @@ export default async function handler(req, res) {
             "Bearer " + (process.env.INTERNAL_KEY ? "***" : "MISSING"),
         });
 
-        // Provide more specific error message
         let errorMessage = "❌ Lỗi khi lấy danh sách game miễn phí.";
         if (err.response?.status === 401) {
           errorMessage =
