@@ -190,9 +190,9 @@ export default async function handler(req, res) {
         const resp = await axios.get(checkUrl, {
           headers: {
             Authorization: `Bearer ${process.env.INTERNAL_KEY}`,
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
           },
-          timeout: 30000, // 30 second timeout
+          timeout: 20000, // 30 second timeout
         });
 
         const msg = resp.data?.message || "❌ Không lấy được danh sách.";
@@ -200,16 +200,20 @@ export default async function handler(req, res) {
       } catch (err) {
         console.error("Lỗi gọi check-free-games:", err.message);
         console.error("URL attempted:", checkUrl);
-        console.error("Headers sent:", { Authorization: 'Bearer ' + (process.env.INTERNAL_KEY ? '***' : 'MISSING') });
-        
+        console.error("Headers sent:", {
+          Authorization:
+            "Bearer " + (process.env.INTERNAL_KEY ? "***" : "MISSING"),
+        });
+
         // Provide more specific error message
         let errorMessage = "❌ Lỗi khi lấy danh sách game miễn phí.";
         if (err.response?.status === 401) {
-          errorMessage = "❌ Lỗi xác thực. Vui lòng kiểm tra lại cấu hình INTERNAL_KEY.";
-        } else if (err.code === 'ECONNABORTED') {
+          errorMessage =
+            "❌ Lỗi xác thực. Vui lòng kiểm tra lại cấu hình INTERNAL_KEY.";
+        } else if (err.code === "ECONNABORTED") {
           errorMessage = "⏳ Hết thời gian chờ khi lấy danh sách game.";
         }
-        
+
         await sendReply(TELEGRAM_API, chatId, errorMessage);
       }
 
