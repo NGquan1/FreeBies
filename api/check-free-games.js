@@ -227,20 +227,32 @@ export default async function handler(req, res) {
   
   if (authHeader) {
     if (authHeader.startsWith('Bearer ')) {
-      internalKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+      internalKey = authHeader.substring(7).trim(); // Remove 'Bearer ' prefix and trim whitespace
     } else if (authHeader.startsWith('bearer ')) {
-      internalKey = authHeader.substring(7); // Remove 'bearer ' prefix
+      internalKey = authHeader.substring(7).trim(); // Remove 'bearer ' prefix and trim whitespace
     } else {
-      internalKey = authHeader; // Use as-is if no prefix
+      internalKey = authHeader.trim(); // Use as-is if no prefix and trim whitespace
     }
   }
   
-  if (internalKey !== process.env.INTERNAL_KEY) {
+  // Log for debugging - but avoid logging actual key values
+  const actualKeyExists = !!process.env.INTERNAL_KEY;
+  const keysMatch = internalKey === process.env.INTERNAL_KEY;
+  
+  console.log('Authorization check:', {
+    receivedHeader: authHeader,
+    extractedKeyExists: !!internalKey,
+    expectedKeyExists: actualKeyExists,
+    keysMatch: keysMatch,
+    isPlaceholder: internalKey && internalKey.startsWith('@') // Check if it's still a placeholder
+  });
+  
+  if (!keysMatch) {
     console.log('Authorization failed:', {
       receivedHeader: authHeader,
-      extractedKey: internalKey,
-      expectedKey: process.env.INTERNAL_KEY ? '***' : 'MISSING',
-      match: internalKey === process.env.INTERNAL_KEY
+      extractedKey: internalKey ? (internalKey.startsWith('@') ? 'PLACEHOLDER_VALUE' : '***') : null,
+      expectedKey: actualKeyExists ? '***' : 'MISSING',
+      match: keysMatch
     });
     return res.status(401).json({ error: "Unauthorized" });
   }
