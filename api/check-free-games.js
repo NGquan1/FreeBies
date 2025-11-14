@@ -221,11 +221,13 @@ async function getXboxGames() {
 }
 
 export default async function handler(req, res) {
-  // Handle multiple possible header formats
+  // Check if an authorization header was provided
   const authHeader = req.headers.authorization || req.headers.Authorization;
-  let internalKey = null;
   
+  // If authorization header is present, validate it (for webhook calls and direct API access)
   if (authHeader) {
+    let internalKey = null;
+    
     if (authHeader.startsWith('Bearer ')) {
       internalKey = authHeader.substring(7).trim(); // Remove 'Bearer ' prefix and trim whitespace
     } else if (authHeader.startsWith('bearer ')) {
@@ -233,29 +235,31 @@ export default async function handler(req, res) {
     } else {
       internalKey = authHeader.trim(); // Use as-is if no prefix and trim whitespace
     }
-  }
-  
-  // Log for debugging - but avoid logging actual key values
-  const actualKeyExists = !!process.env.INTERNAL_KEY;
-  const keysMatch = internalKey === process.env.INTERNAL_KEY;
-  
-  console.log('Authorization check:', {
-    receivedHeader: authHeader,
-    extractedKeyExists: !!internalKey,
-    expectedKeyExists: actualKeyExists,
-    keysMatch: keysMatch,
-    isPlaceholder: internalKey && internalKey.startsWith('@') // Check if it's still a placeholder
-  });
-  
-  if (!keysMatch) {
-    console.log('Authorization failed:', {
+    
+    // Log for debugging - but avoid logging actual key values
+    const actualKeyExists = !!process.env.INTERNAL_KEY;
+    const keysMatch = internalKey === process.env.INTERNAL_KEY;
+    
+    console.log('Authorization check:', {
       receivedHeader: authHeader,
-      extractedKey: internalKey ? (internalKey.startsWith('@') ? 'PLACEHOLDER_VALUE' : '***') : null,
-      expectedKey: actualKeyExists ? '***' : 'MISSING',
-      match: keysMatch
+      extractedKeyExists: !!internalKey,
+      expectedKeyExists: actualKeyExists,
+      keysMatch: keysMatch,
+      querySilent: req.query.silent
     });
-    return res.status(401).json({ error: "Unauthorized" });
+    
+    if (!keysMatch) {
+      console.log('Authorization failed:', {
+        receivedHeader: authHeader,
+        extractedKey: internalKey ? (internalKey.startsWith('@') ? 'PLACEHOLDER_VALUE' : '***') : null,
+        expectedKey: actualKeyExists ? '***' : 'MISSING',
+        match: keysMatch
+      });
+      return res.status(401).json({ error: "Unauthorized" });
+    }
   }
+  // If no authorization header, we assume it's the Vercel cron job calling internally, 
+  // so we allow it to proceed without authorization
 
   const silent = req.query.silent === "true";
 
