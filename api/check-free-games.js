@@ -221,8 +221,27 @@ async function getXboxGames() {
 }
 
 export default async function handler(req, res) {
-  const internalKey = req.headers.authorization?.replace("Bearer ", "");
+  // Handle multiple possible header formats
+  const authHeader = req.headers.authorization || req.headers.Authorization;
+  let internalKey = null;
+  
+  if (authHeader) {
+    if (authHeader.startsWith('Bearer ')) {
+      internalKey = authHeader.substring(7); // Remove 'Bearer ' prefix
+    } else if (authHeader.startsWith('bearer ')) {
+      internalKey = authHeader.substring(7); // Remove 'bearer ' prefix
+    } else {
+      internalKey = authHeader; // Use as-is if no prefix
+    }
+  }
+  
   if (internalKey !== process.env.INTERNAL_KEY) {
+    console.log('Authorization failed:', {
+      receivedHeader: authHeader,
+      extractedKey: internalKey,
+      expectedKey: process.env.INTERNAL_KEY ? '***' : 'MISSING',
+      match: internalKey === process.env.INTERNAL_KEY
+    });
     return res.status(401).json({ error: "Unauthorized" });
   }
 
