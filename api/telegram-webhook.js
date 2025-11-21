@@ -148,6 +148,18 @@ export default async function handler(req, res) {
   if (!chatId || !text) return res.status(200).send("No message content");
 
   try {
+    // --- Rate Limiting ---
+    if (!global.rateLimit) global.rateLimit = new Map();
+    const lastRequest = global.rateLimit.get(chatId) || 0;
+    const now = Date.now();
+    if (now - lastRequest < 2000) {
+      // Spam detected, ignore or warn
+      console.log(`⚠️ Rate limit hit for ${chatId}`);
+      return res.status(200).send("Rate limit");
+    }
+    global.rateLimit.set(chatId, now);
+    // ---------------------
+
     const meta = {
       username: message.from?.username,
       first_name: message.from?.first_name,

@@ -262,13 +262,38 @@ export default async function handler(req, res) {
 
   const silent = req.query.silent === "true";
 
-  const [epic, gog, steam, ubisoft, xbox] = await Promise.all([
-    getEpicGames(),
-    getGOGGames(),
-    getSteamGames(),
-    getUbisoftGames(),
-    getXboxGames(),
-  ]);
+  // --- Caching ---
+  if (!global.gameCache) {
+    global.gameCache = {
+      data: null,
+      lastFetch: 0,
+    };
+  }
+
+  const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+  const now = Date.now();
+  let epic, gog, steam, ubisoft, xbox;
+
+  if (
+    global.gameCache.data &&
+    now - global.gameCache.lastFetch < CACHE_TTL
+  ) {
+    console.log("🚀 Serving from cache");
+    ({ epic, gog, steam, ubisoft, xbox } = global.gameCache.data);
+  } else {
+    console.log("🔄 Fetching new data...");
+    [epic, gog, steam, ubisoft, xbox] = await Promise.all([
+      getEpicGames(),
+      getGOGGames(),
+      getSteamGames(),
+      getUbisoftGames(),
+      getXboxGames(),
+    ]);
+
+    global.gameCache.data = { epic, gog, steam, ubisoft, xbox };
+    global.gameCache.lastFetch = now;
+  }
+  // ----------------
 
   let msg = "🎮 <b>GAME MIỄN PHÍ HÔM NAY</b>\n\n";
 
